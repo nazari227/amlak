@@ -20,6 +20,7 @@ class EncryptedTokenStorage(
         private const val KEY_USER_NAME = "enc_user_name"
         private const val KEY_BRANCH_ID = "branch_id"
         private const val KEY_USER_ROLE = "enc_user_role"
+        private const val KEY_USER_CAPABILITIES = "enc_user_capabilities"
         private const val KEY_SCREENSHOT_PROTECTED = "screenshot_protected"
     }
 
@@ -56,13 +57,22 @@ class EncryptedTokenStorage(
         userId: Long,
         fullName: String,
         branchId: Long,
-        role: String
+        role: String,
+        capabilities: Map<String, Boolean> = emptyMap()
     ) {
         prefs.edit()
             .putLong(KEY_USER_ID, userId)
             .putString(KEY_USER_NAME, keyStoreManager.encrypt(fullName))
             .putLong(KEY_BRANCH_ID, branchId)
             .putString(KEY_USER_ROLE, keyStoreManager.encrypt(role))
+            .putString(
+                KEY_USER_CAPABILITIES,
+                keyStoreManager.encrypt(
+                    capabilities.entries
+                        .sortedBy { it.key }
+                        .joinToString(";") { "${it.key}=${if (it.value) 1 else 0}" }
+                )
+            )
             .apply()
     }
 
@@ -70,6 +80,16 @@ class EncryptedTokenStorage(
     fun getUserName(): String = getEncrypted(KEY_USER_NAME).orEmpty()
     fun getBranchId(): Long = prefs.getLong(KEY_BRANCH_ID, 0L)
     fun getUserRole(): String = getEncrypted(KEY_USER_ROLE).orEmpty()
+
+    fun getUserCapabilities(): Map<String, Boolean> =
+        getEncrypted(KEY_USER_CAPABILITIES)
+            .orEmpty()
+            .split(";")
+            .mapNotNull { entry ->
+                val i = entry.indexOf('=')
+                if (i <= 0) null else entry.substring(0, i) to (entry.substring(i + 1) == "1")
+            }
+            .toMap()
 
     fun isLoggedIn(): Boolean =
         !getAccessToken().isNullOrBlank() && !getRefreshToken().isNullOrBlank()
@@ -82,6 +102,7 @@ class EncryptedTokenStorage(
             .remove(KEY_USER_NAME)
             .remove(KEY_BRANCH_ID)
             .remove(KEY_USER_ROLE)
+            .remove(KEY_USER_CAPABILITIES)
             .apply()
     }
 
