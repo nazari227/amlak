@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#FFF4F8FC</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_brand_mark</item>
+        <item name="android:windowSplashScreenAnimationDuration">500</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#FFF4F8FC</item>
+        <item name="android:statusBarColor">#FFF4F8FC</item>
+    </style>
+</resources>
