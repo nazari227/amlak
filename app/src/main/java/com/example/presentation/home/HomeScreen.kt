@@ -34,12 +34,14 @@ import com.example.domain.model.Demand
 import com.example.domain.model.TaskItem
 import com.example.presentation.components.AshianMelkTopBar
 import com.example.presentation.components.StatusBadge
+import com.example.security.AppAccess
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    access: AppAccess,
     onNavigateToCreateProperty: () -> Unit,
     onNavigateToProperties: (String?) -> Unit,
     onNavigateToDemands: () -> Unit,
@@ -81,7 +83,8 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     ConsultantWelcomeCard(
                         consultantName = state.userProfile?.fullName ?: "همکار گرامی",
-                        branchName = state.userProfile?.branchName ?: "شعبه مرکزی"
+                        branchName = (state.userProfile?.branchName ?: "شعبه مرکزی")
+                            .ifBlank { access.roleLabel }
                     )
                 }
 
@@ -91,34 +94,38 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Button(
-                            onClick = onNavigateToCreateProperty,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("quick_add_property_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Filled.AddHome, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("ثبت ملک جدید", fontWeight = FontWeight.Bold)
+                        if (access.canCreateProperty) {
+                            Button(
+                                onClick = onNavigateToCreateProperty,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("quick_add_property_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Filled.AddHome, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("ثبت ملک جدید", fontWeight = FontWeight.Bold)
+                            }
                         }
 
-                        OutlinedButton(
-                            onClick = { onNavigateToProperties(null) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("quick_search_properties_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("جستجوی فایل‌ها", fontWeight = FontWeight.SemiBold)
+                        if (access.showProperties) {
+                            OutlinedButton(
+                                onClick = { onNavigateToProperties(null) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("quick_search_properties_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("جستجوی فایل‌ها", fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
