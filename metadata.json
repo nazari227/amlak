@@ -1,0 +1,6 @@
+{
+  "name": "Ashian Melk",
+  "description": "سامانه مدیریت املاک آشیان ملک - Persian multi-branch real-estate management system with property listings, demand matching, task workflow, offline draft encryption, and secure sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
