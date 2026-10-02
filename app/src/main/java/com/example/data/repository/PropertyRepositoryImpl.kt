@@ -332,7 +332,7 @@ class PropertyRepositoryImpl(
             yearBuilt = property.buildYear,
             city = location.city,
             neighborhood = location.neighborhood.ifBlank { location.district },
-            address = location.address.ifBlank { null },
+            address = location.address.takeIf { it.isNotBlank() },
             latitude = location.lat,
             longitude = location.lng,
             thumbnail = media.thumbnailUrl.ifBlank { null },
