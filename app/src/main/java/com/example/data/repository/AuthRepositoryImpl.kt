@@ -61,9 +61,18 @@ class AuthRepositoryImpl(
                 } else {
                     val raw = response.errorBody()?.string().orEmpty()
                     val mfaRequired = response.code() == 401 &&
-                        (raw.contains("api_mfa_required") || raw.contains("\"mfa_required\":true"))
+                        raw.contains("api_mfa_required")
+                    val mfaInvalid = response.code() == 401 &&
+                        raw.contains("api_mfa_invalid")
+
                     if (mfaRequired) {
                         NetworkResult.Success(LoginResult.MfaRequired)
+                    } else if (mfaInvalid) {
+                        NetworkResult.Error(
+                            "کد احراز هویت دومرحله‌ای معتبر نیست.",
+                            401,
+                            isUnauthorized = false
+                        )
                     } else {
                         val message = when (response.code()) {
                             400 -> "اطلاعات ورود یا شناسه دستگاه معتبر نیست."
