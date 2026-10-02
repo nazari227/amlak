@@ -30,6 +30,7 @@ class LoginViewModel(
     private var pendingPassword: String = ""
 
     fun login(username: String, password: String) {
+        if (_uiState.value.isLoading) return
         if (username.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(errorMessage = "لطفاً نام کاربری و رمز عبور را وارد کنید.")
             return
@@ -57,6 +58,7 @@ class LoginViewModel(
     }
 
     fun verifyMfa(code: String) {
+        if (_uiState.value.isLoading) return
         if (pendingLogin.isBlank() || pendingPassword.isBlank()) {
             resetState()
             return
