@@ -20,7 +20,6 @@ data class NotificationsUiState(
 class NotificationsViewModel(
     private val notificationRepository: NotificationRepository
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState: StateFlow<NotificationsUiState> = _uiState.asStateFlow()
 
@@ -40,45 +39,51 @@ class NotificationsViewModel(
     fun loadNotifications() {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val result = notificationRepository.getNotifications()
-            if (result.isSuccess) {
-                val list = result.getOrNull() ?: emptyList()
-                _uiState.value = _uiState.value.copy(
+            when (val result = notificationRepository.getNotifications()) {
+                is NetworkResult.Success -> _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    notifications = list,
-                    unreadCount = list.count { !it.isRead },
+                    notifications = result.data,
+                    unreadCount = result.data.count { !it.isRead },
                     errorMessage = null
                 )
-            } else {
-                _uiState.value = _uiState.value.copy(
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    errorMessage = (result as? NetworkResult.Error)?.message
+                    errorMessage = result.message
                 )
+                is NetworkResult.Loading -> Unit
             }
         }
     }
 
     fun markAsRead(id: Long) {
         viewModelScope.launch {
-            notificationRepository.markAsRead(id)
-            val updated = _uiState.value.notifications.map {
-                if (it.id == id) it.copy(isRead = true) else it
+            when (val result = notificationRepository.markAsRead(id)) {
+                is NetworkResult.Success -> {
+                    val updated = _uiState.value.notifications.map {
+                        if (it.id == id) it.copy(isRead = true) else it
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        notifications = updated,
+                        unreadCount = updated.count { !it.isRead },
+                        errorMessage = null
+                    )
+                }
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(errorMessage = result.message)
+                is NetworkResult.Loading -> Unit
             }
-            _uiState.value = _uiState.value.copy(
-                notifications = updated,
-                unreadCount = updated.count { !it.isRead }
-            )
         }
     }
 
     fun markAllAsRead() {
         viewModelScope.launch {
-            notificationRepository.markAllAsRead()
-            val updated = _uiState.value.notifications.map { it.copy(isRead = true) }
-            _uiState.value = _uiState.value.copy(
-                notifications = updated,
-                unreadCount = 0
-            )
+            when (val result = notificationRepository.markAllAsRead()) {
+                is NetworkResult.Success -> {
+                    val updated = _uiState.value.notifications.map { it.copy(isRead = true) }
+                    _uiState.value = _uiState.value.copy(notifications = updated, unreadCount = 0, errorMessage = null)
+                }
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(errorMessage = result.message)
+                is NetworkResult.Loading -> Unit
+            }
         }
     }
 }
