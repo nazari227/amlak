@@ -82,13 +82,35 @@ data class CasePropertyDto(
     @Json(name = "type") val type: String = "",
     @Json(name = "area") val area: Double = 0.0,
     @Json(name = "land_area") val landArea: Double = 0.0,
-    @Json(name = "bedrooms") val bedrooms: Int = 0
+    @Json(name = "bedrooms") val bedrooms: Int = 0,
+    @Json(name = "build_year") val buildYear: Int? = null,
+    @Json(name = "floor_no") val floorNo: Int? = null,
+    @Json(name = "total_floors") val totalFloors: Int? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CasePricingDto(
+    @Json(name = "amount") val amount: Double? = null,
+    @Json(name = "deposit_amount") val depositAmount: Double? = null,
+    @Json(name = "rent_amount") val rentAmount: Double? = null,
+    @Json(name = "display_mode") val displayMode: String = "numeric"
 )
 
 @JsonClass(generateAdapter = true)
 data class CaseLocationDto(
+    @Json(name = "city") val city: String = "",
     @Json(name = "district") val district: String = "",
-    @Json(name = "neighborhood") val neighborhood: String = ""
+    @Json(name = "neighborhood") val neighborhood: String = "",
+    @Json(name = "address") val address: String = "",
+    @Json(name = "lat") val lat: Double? = null,
+    @Json(name = "lng") val lng: Double? = null,
+    @Json(name = "precise") val precise: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class CaseMediaDto(
+    @Json(name = "thumbnail_url") val thumbnailUrl: String = "",
+    @Json(name = "images") val images: List<String> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
@@ -102,7 +124,9 @@ data class CaseDto(
     @Json(name = "branch_name") val branchName: String = "",
     @Json(name = "assigned_agent_user_id") val assignedAgentUserId: Long = 0,
     @Json(name = "property") val property: CasePropertyDto = CasePropertyDto(),
+    @Json(name = "pricing") val pricing: CasePricingDto = CasePricingDto(),
     @Json(name = "location") val location: CaseLocationDto = CaseLocationDto(),
+    @Json(name = "media") val media: CaseMediaDto = CaseMediaDto(),
     @Json(name = "updated_at") val updatedAt: String = "",
     @Json(name = "closed_at") val closedAt: String = "",
     @Json(name = "version") val version: String = ""
