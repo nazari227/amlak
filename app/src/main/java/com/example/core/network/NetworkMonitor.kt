@@ -1,5 +1,6 @@
 package com.example.core.network
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -15,6 +16,7 @@ interface NetworkMonitor {
     fun isCurrentlyOnline(): Boolean
 }
 
+@SuppressLint("MissingPermission") // ACCESS_NETWORK_STATE is declared in the app manifest.
 class AndroidNetworkMonitor(private val context: Context) : NetworkMonitor {
 
     private val connectivityManager =
