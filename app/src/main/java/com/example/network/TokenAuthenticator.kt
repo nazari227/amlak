@@ -25,6 +25,10 @@ class TokenAuthenticator(
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
     override fun authenticate(route: Route?, response: Response): Request? {
+        val path = response.request.url.encodedPath
+        if (path.endsWith("/auth/login") || path.endsWith("/auth/refresh")) {
+            return null
+        }
         if (responseCount(response) >= 2) return null
 
         synchronized(lock) {
