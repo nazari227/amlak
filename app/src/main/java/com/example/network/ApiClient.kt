@@ -23,6 +23,7 @@ object ApiClient {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .dns(SafeDns())
             .addInterceptor(AuthInterceptor(tokenStorage))
             .addInterceptor(RateLimitRetryInterceptor())
             .addInterceptor(SafeLoggingInterceptor())
