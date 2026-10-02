@@ -1,5 +1,6 @@
 package com.example.network
 
+import com.example.BuildConfig
 import com.example.security.EncryptedTokenStorage
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -12,7 +13,7 @@ class AuthInterceptor(
         val originalRequest = chain.request()
         val requestBuilder = originalRequest.newBuilder()
             .header("X-Device-Id", tokenStorage.getDeviceId())
-            .header("X-App-Version", "1.0")
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
             .header("Accept", "application/json")
             .header("Accept-Language", "fa-IR,fa;q=0.9,en;q=0.8")
 
