@@ -80,7 +80,7 @@ fun AshianMelkMainApp() {
         app.sessionRevokedEvents.collectLatest {
             if (navController.currentDestination?.route != Screen.Login.route) {
                 navController.navigate(Screen.Login.route) {
-                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    popUpTo(Screen.Home.route) { inclusive = true }
                     launchSingleTop = true
                 }
             }
