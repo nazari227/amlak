@@ -20,8 +20,8 @@ data class DeviceSession(
     val sessionId: String,
     val deviceName: String,
     val lastActive: String,
-    val ipAddress: String,
-    val isCurrentDevice: Boolean
+    val ipAddress: String = "",
+    val isCurrentDevice: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -29,28 +29,28 @@ data class Property(
     val id: Long,
     val code: String,
     val title: String,
-    val transactionType: String, // "sale", "rent", "mortgage"
-    val propertyType: String,    // "apartment", "villa", "office", "land", "store"
-    val status: String,          // "active", "pending", "reserved", "sold"
+    val transactionType: String,
+    val propertyType: String,
+    val status: String,
     val branchId: Long,
     val branchName: String,
     val consultantName: String,
-    val price: Long,             // Total price in Toman or Rent
-    val mortgagePrice: Long = 0, // For rent/mortgage combinations
-    val area: Double,            // Square meters
-    val rooms: Int,
+    val price: Long = 0,
+    val mortgagePrice: Long = 0,
+    val area: Double = 0.0,
+    val rooms: Int = 0,
     val floor: Int? = null,
     val totalFloors: Int? = null,
     val yearBuilt: Int? = null,
-    val city: String,
-    val neighborhood: String,
+    val city: String = "",
+    val neighborhood: String = "",
     val address: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val thumbnail: String? = null,
     val images: List<String> = emptyList(),
     val features: List<String> = emptyList(),
-    val baseVersion: Int = 1,
+    val baseVersion: String = "",
     val createdAt: String? = null,
     val updatedAt: String? = null
 )
@@ -74,11 +74,10 @@ data class PropertyFilter(
 @JsonClass(generateAdapter = true)
 data class PropertyDraft(
     val idempotencyKey: String,
-    val baseVersion: Int = 1,
-    // Step 1: Basic Property Data
+    val baseVersion: String = "",
     val title: String = "",
-    val transactionType: String = "sale", // sale, rent, mortgage
-    val propertyType: String = "apartment", // apartment, villa, office, land, store
+    val transactionType: String = "sale",
+    val propertyType: String = "apartment",
     val price: Long = 0,
     val mortgagePrice: Long = 0,
     val area: Double = 0.0,
@@ -86,17 +85,14 @@ data class PropertyDraft(
     val yearBuilt: Int = 1400,
     val floor: Int = 1,
     val totalFloors: Int = 5,
-    // Step 2: Owner & Contact Information (Sensitive)
     val ownerName: String = "",
     val ownerPhone: String = "",
     val ownerNotes: String = "",
-    // Step 3: Location
-    val city: String = "تهران",
+    val city: String = "ملایر",
     val neighborhood: String = "",
     val address: String = "",
-    val latitude: Double = 35.6892,
-    val longitude: Double = 51.3890,
-    // Step 4: Photos & Features
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
     val localImagePaths: List<String> = emptyList(),
     val features: List<String> = emptyList(),
     val description: String = "",
@@ -115,7 +111,7 @@ data class Demand(
     val maxBudget: Long,
     val minArea: Double,
     val rooms: Int? = null,
-    val status: String, // "new", "in_progress", "matched", "closed"
+    val status: String,
     val assignedConsultant: String,
     val matchingPropertiesCount: Int = 0,
     val followUpNotes: List<DemandFollowUpNote> = emptyList(),
@@ -135,12 +131,12 @@ data class TaskItem(
     val id: Long,
     val title: String,
     val description: String,
-    val category: String, // "call", "visit", "contract", "inspection"
+    val category: String,
     val dueDate: String,
     val isCompleted: Boolean,
     val isOverdue: Boolean,
     val relatedEntityId: Long? = null,
-    val relatedEntityType: String? = null // "property", "demand"
+    val relatedEntityType: String? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -158,7 +154,7 @@ data class AppNotification(
     val id: Long,
     val title: String,
     val message: String,
-    val type: String, // "property", "demand", "task", "appointment", "system"
+    val type: String,
     val targetId: Long? = null,
     val isRead: Boolean,
     val createdAt: String
