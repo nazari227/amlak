@@ -18,6 +18,7 @@ import com.example.presentation.auth.LoginScreen
 import com.example.presentation.branding.AshianSplashScreen
 import com.example.presentation.auth.LoginViewModel
 import com.example.presentation.creation.PropertyCreationViewModel
+import com.example.presentation.diagnostics.CrashDiagnosticsScreen
 import com.example.presentation.creation.PropertyCreationWizardScreen
 import com.example.presentation.demands.DemandDetailScreen
 import com.example.presentation.demands.DemandsScreen
@@ -138,10 +139,12 @@ fun AshianMelkMainApp() {
             composable(Screen.Splash.route) {
                 AshianSplashScreen(
                     onFinished = {
-                        val target = if (app.authRepository.isLoggedIn()) {
-                            Screen.Home.route
-                        } else {
-                            Screen.Login.route
+                        val diagnostic = app.crashDiagnostics.peek()
+                            ?: app.crashDiagnostics.interruptedAuthSnapshot()
+                        val target = when {
+                            diagnostic != null -> Screen.CrashDiagnostics.route
+                            app.authRepository.isLoggedIn() -> Screen.Home.route
+                            else -> Screen.Login.route
                         }
                         navController.navigate(target) {
                             popUpTo(Screen.Splash.route) { inclusive = true }
@@ -149,6 +152,31 @@ fun AshianMelkMainApp() {
                         }
                     }
                 )
+            }
+
+            composable(Screen.CrashDiagnostics.route) {
+                val snapshot = app.crashDiagnostics.peek()
+                    ?: app.crashDiagnostics.interruptedAuthSnapshot()
+                if (snapshot != null) {
+                    CrashDiagnosticsScreen(
+                        snapshot = snapshot,
+                        onReturnToLogin = {
+                            app.tokenStorage.clearAuth()
+                            app.crashDiagnostics.clear()
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(Screen.CrashDiagnostics.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                } else {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.CrashDiagnostics.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
             }
 
             // 1. Home / Today Screen
