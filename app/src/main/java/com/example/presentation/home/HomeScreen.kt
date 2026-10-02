@@ -142,48 +142,56 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "وظایف امروز",
-                            count = state.summary?.todayTasksCount ?: 0,
-                            icon = Icons.Filled.Checklist,
-                            tint = Color(0xFF0F52BA),
-                            bg = Color(0xFFEFF6FF),
-                            onClick = onNavigateToTasks
-                        )
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "قرارهای بازدید",
-                            count = state.summary?.todayAppointmentsCount ?: 0,
-                            icon = Icons.Filled.Event,
-                            tint = Color(0xFF0D9488),
-                            bg = Color(0xFFF0FDFA),
-                            onClick = onNavigateToTasks
-                        )
+                        if (access.showTasks) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "وظایف امروز",
+                                count = state.summary?.todayTasksCount ?: 0,
+                                icon = Icons.Filled.Checklist,
+                                tint = Color(0xFF0F52BA),
+                                bg = Color(0xFFEFF6FF),
+                                onClick = onNavigateToTasks
+                            )
+                        }
+                        if (access.canManageAppointments) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "قرارهای بازدید",
+                                count = state.summary?.todayAppointmentsCount ?: 0,
+                                icon = Icons.Filled.Event,
+                                tint = Color(0xFF0D9488),
+                                bg = Color(0xFFF0FDFA),
+                                onClick = onNavigateToTasks
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "متقاضیان جدید",
-                            count = state.summary?.newDemandsCount ?: 0,
-                            icon = Icons.Filled.GroupAdd,
-                            tint = Color(0xFFD97706),
-                            bg = Color(0xFFFFFBEB),
-                            onClick = onNavigateToDemands
-                        )
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "املاک فعال شعبه",
-                            count = state.summary?.activePropertiesCount ?: 0,
-                            icon = Icons.Filled.Apartment,
-                            tint = Color(0xFF7C3AED),
-                            bg = Color(0xFFF5F3FF),
-                            onClick = { onNavigateToProperties(null) }
-                        )
+                        if (access.showDemands) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "متقاضیان جدید",
+                                count = state.summary?.newDemandsCount ?: 0,
+                                icon = Icons.Filled.GroupAdd,
+                                tint = Color(0xFFD97706),
+                                bg = Color(0xFFFFFBEB),
+                                onClick = onNavigateToDemands
+                            )
+                        }
+                        if (access.showProperties) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "املاک فعال شعبه",
+                                count = state.summary?.activePropertiesCount ?: 0,
+                                icon = Icons.Filled.Apartment,
+                                tint = Color(0xFF7C3AED),
+                                bg = Color(0xFFF5F3FF),
+                                onClick = { onNavigateToProperties(null) }
+                            )
+                        }
                     }
                 }
 
