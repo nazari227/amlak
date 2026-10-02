@@ -57,7 +57,7 @@ fun HomeScreen(
         topBar = {
             AshianMelkTopBar(
                 title = "سامانه املاک آشیان",
-                subtitle = state.userProfile?.branchName ?: "شعبه مرکزی",
+                subtitle = state.userProfile?.branchName.orEmpty().ifBlank { access.roleLabel },
                 isOnline = state.isOnline,
                 unreadNotificationsCount = state.summary?.unreadNotificationsCount ?: 0,
                 onNotificationClick = onNavigateToNotifications
@@ -189,7 +189,7 @@ fun HomeScreen(
 
                 // 4. Today's Appointments Section
                 val appointments = state.summary?.todayAppointments ?: emptyList()
-                if (appointments.isNotEmpty()) {
+                if (access.canManageAppointments && appointments.isNotEmpty()) {
                     item {
                         SectionHeader(title = "قرارهای بازدید امروز", onMoreClick = onNavigateToTasks)
                     }
@@ -203,7 +203,7 @@ fun HomeScreen(
 
                 // 5. Today's Tasks & Follow-ups
                 val tasks = state.summary?.todayTasks ?: emptyList()
-                if (tasks.isNotEmpty()) {
+                if (access.showTasks && tasks.isNotEmpty()) {
                     item {
                         SectionHeader(title = "وظایف و پیگیری‌های امروز", onMoreClick = onNavigateToTasks)
                     }
@@ -218,7 +218,7 @@ fun HomeScreen(
 
                 // 6. New Assigned Demands
                 val demands = state.summary?.recentDemands ?: emptyList()
-                if (demands.isNotEmpty()) {
+                if (access.showDemands && demands.isNotEmpty()) {
                     item {
                         SectionHeader(title = "متقاضیان جدید ارجاع شده", onMoreClick = onNavigateToDemands)
                     }
