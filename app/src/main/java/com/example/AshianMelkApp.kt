@@ -56,7 +56,7 @@ class AshianMelkApp : Application() {
             }
         )
 
-        authRepository = AuthRepositoryImpl(apiService, tokenStorage)
+        authRepository = AuthRepositoryImpl(apiService, tokenStorage, crashDiagnostics)
         propertyRepository = PropertyRepositoryImpl(this, apiService, database.propertyDao(), encryptedDraftStorage)
         demandRepository = DemandRepositoryImpl(apiService, database.demandDao())
         taskRepository = TaskRepositoryImpl(apiService, database.taskDao())
