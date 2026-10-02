@@ -314,6 +314,23 @@ data class NotificationsResponse(
 )
 
 @JsonClass(generateAdapter = true)
+data class AppointmentDto(
+    @Json(name = "id") val id: Long,
+    @Json(name = "type") val type: String = "",
+    @Json(name = "title") val title: String = "",
+    @Json(name = "status") val status: String = "",
+    @Json(name = "start_at") val startAt: String = "",
+    @Json(name = "end_at") val endAt: String = "",
+    @Json(name = "assigned_to") val assignedTo: Long = 0,
+    @Json(name = "assignee_name") val assigneeName: String = "",
+    @Json(name = "branch_id") val branchId: Long = 0,
+    @Json(name = "branch_name") val branchName: String = "",
+    @Json(name = "case_id") val caseId: Long = 0,
+    @Json(name = "case_code") val caseCode: String = "",
+    @Json(name = "demand_id") val demandId: Long = 0
+)
+
+@JsonClass(generateAdapter = true)
 data class BootstrapSummaryDto(
     @Json(name = "active_cases") val activeCases: Int = 0,
     @Json(name = "active_demands") val activeDemands: Int = 0,
@@ -328,5 +345,6 @@ data class BootstrapDto(
     @Json(name = "recent_cases") val recentCases: List<CaseDto> = emptyList(),
     @Json(name = "recent_demands") val recentDemands: List<DemandDto> = emptyList(),
     @Json(name = "tasks") val tasks: List<TaskDto> = emptyList(),
+    @Json(name = "appointments") val appointments: List<AppointmentDto> = emptyList(),
     @Json(name = "api_features") val apiFeatures: Map<String, Boolean> = emptyMap()
 )
