@@ -2,6 +2,9 @@ package com.example.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 class EncryptedTokenStorage(
@@ -22,6 +25,11 @@ class EncryptedTokenStorage(
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val _screenshotProtection = MutableStateFlow(
+        prefs.getBoolean(KEY_SCREENSHOT_PROTECTED, true)
+    )
+    val screenshotProtection: StateFlow<Boolean> = _screenshotProtection.asStateFlow()
 
     init {
         if (prefs.getString(KEY_DEVICE_SESSION_ID, null) == null) {
@@ -63,7 +71,8 @@ class EncryptedTokenStorage(
     fun getBranchId(): Long = prefs.getLong(KEY_BRANCH_ID, 0L)
     fun getUserRole(): String = getEncrypted(KEY_USER_ROLE).orEmpty()
 
-    fun isLoggedIn(): Boolean = !getAccessToken().isNullOrBlank() && !getRefreshToken().isNullOrBlank()
+    fun isLoggedIn(): Boolean =
+        !getAccessToken().isNullOrBlank() && !getRefreshToken().isNullOrBlank()
 
     fun clearAuth() {
         prefs.edit()
@@ -76,11 +85,11 @@ class EncryptedTokenStorage(
             .apply()
     }
 
-    fun isScreenshotProtectionEnabled(): Boolean =
-        prefs.getBoolean(KEY_SCREENSHOT_PROTECTED, true)
+    fun isScreenshotProtectionEnabled(): Boolean = _screenshotProtection.value
 
     fun setScreenshotProtection(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SCREENSHOT_PROTECTED, enabled).apply()
+        _screenshotProtection.value = enabled
     }
 
     private fun getEncrypted(key: String): String? {
