@@ -90,7 +90,8 @@ class AuthRepositoryImpl(
                     userId = profile.id,
                     fullName = profile.fullName,
                     branchId = profile.branchId,
-                    role = profile.role
+                    role = profile.role,
+                    capabilities = profile.capabilities
                 )
                 NetworkResult.Success(profile)
             } else {
@@ -156,7 +157,8 @@ class AuthRepositoryImpl(
         email = "",
         branchId = tokenStorage.getBranchId(),
         branchName = "",
-        role = tokenStorage.getUserRole()
+        role = tokenStorage.getUserRole(),
+        capabilities = tokenStorage.getUserCapabilities()
     )
 
     private fun UserDto.toDomain(): UserProfile = UserProfile(
@@ -168,6 +170,7 @@ class AuthRepositoryImpl(
         branchId = branchId,
         branchName = "",
         role = staffType,
-        avatarUrl = null
+        avatarUrl = null,
+        capabilities = capabilities
     )
 }
