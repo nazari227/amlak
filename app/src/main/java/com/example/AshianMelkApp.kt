@@ -2,6 +2,7 @@ package com.example
 
 import android.app.Application
 import com.example.core.network.AndroidNetworkMonitor
+import com.example.diagnostics.CrashDiagnostics
 import com.example.core.network.NetworkMonitor
 import com.example.data.local.AshianMelkDatabase
 import com.example.data.repository.*
@@ -23,6 +24,7 @@ class AshianMelkApp : Application() {
     lateinit var database: AshianMelkDatabase private set
     lateinit var apiService: AshianMelkApiService private set
     lateinit var networkMonitor: NetworkMonitor private set
+    lateinit var crashDiagnostics: CrashDiagnostics private set
 
     // Repositories
     lateinit var authRepository: AuthRepository private set
@@ -40,6 +42,7 @@ class AshianMelkApp : Application() {
         super.onCreate()
         instance = this
 
+        crashDiagnostics = CrashDiagnostics(this).also { it.install() }
         keyStoreManager = KeyStoreManager()
         tokenStorage = EncryptedTokenStorage(this, keyStoreManager)
         encryptedDraftStorage = EncryptedDraftStorage(this, keyStoreManager)
