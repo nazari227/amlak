@@ -4,7 +4,7 @@ import com.example.core.network.NetworkResult
 import com.example.data.local.dao.TaskDao
 import com.example.data.local.entity.TaskEntity
 import com.example.data.model.TaskDto
-import com.example.data.model.WorkReportRequest
+import com.example.data.model.TaskUpdateRequest
 import com.example.domain.model.TaskItem
 import com.example.domain.repository.TaskRepository
 import com.example.network.AshianMelkApiService
@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 class TaskRepositoryImpl(
     private val apiService: AshianMelkApiService,
@@ -21,66 +24,51 @@ class TaskRepositoryImpl(
 
     override suspend fun getTasks(filter: String?): NetworkResult<List<TaskItem>> =
         withContext(Dispatchers.IO) {
+            val focus = when (filter) {
+                "today", "overdue", "waiting", "revision" -> filter
+                else -> "all"
+            }
             try {
-                val response = apiService.getTasks(filter)
-                if (response.isSuccessful && response.body()?.data != null) {
-                    val dtoList = response.body()!!.data!!
-                    val entities = dtoList.map { it.toEntity() }
+                val response = apiService.getTasks(focus = focus)
+                val data = response.body()?.data
+                if (response.isSuccessful && data != null) {
+                    val tasks = data.items.map { it.toDomain() }
                     taskDao.clearTasks()
-                    taskDao.insertTasks(entities)
-                    NetworkResult.Success(dtoList.map { it.toDomain() })
+                    taskDao.insertTasks(tasks.map { it.toEntity() })
+                    NetworkResult.Success(tasks)
                 } else {
-                    fallbackToCache()
+                    fallbackToCache(response.code())
                 }
             } catch (e: Exception) {
-                fallbackToCache()
+                val cached = taskDao.getAllTasksFlow().first()
+                if (cached.isNotEmpty()) NetworkResult.Success(cached.map { it.toDomain() })
+                else NetworkResult.Error("وظایف در حالت آفلاین قبلاً روی دستگاه ذخیره نشده‌اند.", cause = e)
             }
         }
 
-    private suspend fun fallbackToCache(): NetworkResult<List<TaskItem>> {
+    private suspend fun fallbackToCache(code: Int): NetworkResult<List<TaskItem>> {
         val cached = taskDao.getAllTasksFlow().first()
-        return if (cached.isNotEmpty()) {
-            NetworkResult.Success(cached.map { it.toDomain() })
-        } else {
-            val initial = getAshianMelkInitialTasks()
-            taskDao.insertTasks(initial)
-            NetworkResult.Success(initial.map { it.toDomain() })
-        }
+        return if (cached.isNotEmpty()) NetworkResult.Success(cached.map { it.toDomain() })
+        else NetworkResult.Error("دریافت وظایف از سرور انجام نشد.", code)
     }
 
     override suspend fun completeTask(taskId: Long): NetworkResult<TaskItem> =
         withContext(Dispatchers.IO) {
             try {
-                taskDao.updateTaskStatus(taskId, true)
-                val response = apiService.completeTask(taskId)
-                if (response.isSuccessful && response.body()?.data != null) {
-                    NetworkResult.Success(response.body()!!.data!!.toDomain())
+                val response = apiService.updateTask(
+                    taskId,
+                    TaskUpdateRequest(status = "done", note = "تکمیل از اپ موبایل")
+                )
+                val task = response.body()?.data?.task
+                if (response.isSuccessful && task != null) {
+                    val mapped = task.toDomain()
+                    taskDao.insertTasks(listOf(mapped.toEntity()))
+                    NetworkResult.Success(mapped)
                 } else {
-                    NetworkResult.Success(
-                        TaskItem(
-                            id = taskId,
-                            title = "وظیفه تکمیل شده",
-                            description = "",
-                            category = "visit",
-                            dueDate = "امروز",
-                            isCompleted = true,
-                            isOverdue = false
-                        )
-                    )
+                    NetworkResult.Error("تکمیل وظیفه روی سرور ثبت نشد.", response.code())
                 }
             } catch (e: Exception) {
-                taskDao.updateTaskStatus(taskId, true)
-                NetworkResult.Success(
-                    TaskItem(
-                        id = taskId,
-                        title = "وظیفه تکمیل شده (ثبت محلی)",
-                        description = "",
-                        category = "visit",
-                        dueDate = "امروز",
-                        isCompleted = true,
-                        isOverdue = false
-                    )
-                )
+                NetworkResult.Error("تکمیل وظیفه نیاز به اتصال آنلاین دارد.", cause = e)
             }
         }
 
@@ -89,112 +77,85 @@ class TaskRepositoryImpl(
         report: String,
         hours: Double
     ): NetworkResult<Unit> = withContext(Dispatchers.IO) {
+        if (taskId == null || taskId <= 0) {
+            return@withContext NetworkResult.Error("برای ثبت گزارش کار، وظیفه مرتبط باید مشخص باشد.")
+        }
         try {
-            val response = apiService.submitWorkReport(
-                WorkReportRequest(taskId = taskId, reportText = report, hoursSpent = hours)
+            val response = apiService.updateTask(
+                taskId,
+                TaskUpdateRequest(
+                    status = "in_progress",
+                    note = report.trim(),
+                    details = mapOf("hours_spent" to hours.toString())
+                )
             )
-            if (response.isSuccessful) {
-                NetworkResult.Success(Unit)
-            } else {
-                NetworkResult.Success(Unit) // Offline accepted
-            }
+            if (response.isSuccessful) NetworkResult.Success(Unit)
+            else NetworkResult.Error("گزارش کار روی سرور ثبت نشد.", response.code())
         } catch (e: Exception) {
-            NetworkResult.Success(Unit)
+            NetworkResult.Error("ثبت گزارش کار نیاز به اتصال آنلاین دارد.", cause = e)
         }
     }
 
-    override fun observeCachedTasks(): Flow<List<TaskItem>> {
-        return taskDao.getAllTasksFlow().map { list -> list.map { it.toDomain() } }
-    }
+    override fun observeCachedTasks(): Flow<List<TaskItem>> =
+        taskDao.getAllTasksFlow().map { list -> list.map { it.toDomain() } }
 
     private fun TaskDto.toDomain(): TaskItem {
+        val completed = status in setOf("done", "closed", "cancelled")
+        val overdue = !completed && isOverdue(dueAt)
+        val relatedId = when {
+            caseId > 0 -> caseId
+            demandId > 0 -> demandId
+            else -> null
+        }
+        val relatedType = when {
+            caseId > 0 -> "property"
+            demandId > 0 -> "demand"
+            else -> null
+        }
         return TaskItem(
-            id = this.id,
-            title = this.title,
-            description = this.description,
-            category = this.category,
-            dueDate = this.dueDate,
-            isCompleted = this.isCompleted,
-            isOverdue = this.isOverdue,
-            relatedEntityId = this.relatedEntityId,
-            relatedEntityType = this.relatedEntityType
+            id = id,
+            title = title,
+            description = "",
+            category = category,
+            dueDate = dueAt,
+            isCompleted = completed,
+            isOverdue = overdue,
+            relatedEntityId = relatedId,
+            relatedEntityType = relatedType
         )
     }
 
-    private fun TaskDto.toEntity(): TaskEntity {
-        return TaskEntity(
-            id = this.id,
-            title = this.title,
-            description = this.description,
-            category = this.category,
-            dueDate = this.dueDate,
-            isCompleted = this.isCompleted,
-            isOverdue = this.isOverdue,
-            relatedEntityId = this.relatedEntityId,
-            relatedEntityType = this.relatedEntityType
-        )
+    private fun isOverdue(value: String): Boolean {
+        if (value.isBlank()) return false
+        return try {
+            val dt = LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            dt.toInstant(ZoneOffset.UTC).isBefore(java.time.Instant.now())
+        } catch (_: Exception) {
+            false
+        }
     }
 
-    private fun TaskEntity.toDomain(): TaskItem {
-        return TaskItem(
-            id = this.id,
-            title = this.title,
-            description = this.description,
-            category = this.category,
-            dueDate = this.dueDate,
-            isCompleted = this.isCompleted,
-            isOverdue = this.isOverdue,
-            relatedEntityId = this.relatedEntityId,
-            relatedEntityType = this.relatedEntityType
-        )
-    }
+    private fun TaskItem.toEntity(): TaskEntity = TaskEntity(
+        id = id,
+        title = title,
+        description = description,
+        category = category,
+        dueDate = dueDate,
+        isCompleted = isCompleted,
+        isOverdue = isOverdue,
+        relatedEntityId = relatedEntityId,
+        relatedEntityType = relatedEntityType
+    )
 
-    private fun getAshianMelkInitialTasks(): List<TaskEntity> {
-        return listOf(
-            TaskEntity(
-                id = 301L,
-                title = "هماهنگی بازدید آپارتمان زعفرانیه با دکتر فرهمند",
-                description = "تماس با سرایدار جهت باز بودن درب لابی و پارکینگ",
-                category = "visit",
-                dueDate = "امروز - ساعت ۱۶:۳۰",
-                isCompleted = false,
-                isOverdue = false,
-                relatedEntityId = 101L,
-                relatedEntityType = "property"
-            ),
-            TaskEntity(
-                id = 302L,
-                title = "پیگیری پیش‌نویس قرارداد اجاره نیاوران",
-                description = "بررسی بندهای مربوط به ودیعه و مهلت تخلیه با مالک",
-                category = "contract",
-                dueDate = "امروز - ساعت ۱۸:۰۰",
-                isCompleted = false,
-                isOverdue = false,
-                relatedEntityId = 103L,
-                relatedEntityType = "property"
-            ),
-            TaskEntity(
-                id = 303L,
-                title = "تماس با مالک ویلای شهرک غرب جهت تمدید انحصار",
-                description = "پیشنهاد تخفیف پورسانت در صورت واگذاری فایل به صورت اختصاصی",
-                category = "call",
-                dueDate = "دیروز - ساعت ۱۱:۰۰",
-                isCompleted = false,
-                isOverdue = true,
-                relatedEntityId = 104L,
-                relatedEntityType = "property"
-            ),
-            TaskEntity(
-                id = 304L,
-                title = "کارشناسی قیمت واحد اداری میرداماد",
-                description = "بررسی امکان تجهیز پارکینگ‌های اضافه ساختمان",
-                category = "inspection",
-                dueDate = "فردا - ساعت ۱۰:۰۰",
-                isCompleted = false,
-                isOverdue = false,
-                relatedEntityId = 105L,
-                relatedEntityType = "property"
-            )
-        )
-    }
+    private fun TaskEntity.toDomain(): TaskItem = TaskItem(
+        id = id,
+        title = title,
+        description = description,
+        category = category,
+        dueDate = dueDate,
+        isCompleted = isCompleted,
+        isOverdue = isOverdue,
+        relatedEntityId = relatedEntityId,
+        relatedEntityType = relatedEntityType
+    )
 }
