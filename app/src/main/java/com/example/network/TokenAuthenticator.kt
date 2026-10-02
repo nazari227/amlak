@@ -2,14 +2,19 @@ package com.example.network
 
 import com.example.data.model.BaseApiResponse
 import com.example.data.model.RefreshTokenRequest
-import com.example.data.model.RefreshTokenResponse
+import com.example.data.model.TokenResponse
 import com.example.security.EncryptedTokenStorage
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import okhttp3.*
+import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 class TokenAuthenticator(
     private val tokenStorage: EncryptedTokenStorage,
@@ -20,72 +25,64 @@ class TokenAuthenticator(
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
     override fun authenticate(route: Route?, response: Response): Request? {
-        // Prevent infinite loops if authentication repeatedly fails
-        if (responseCount(response) >= 3) {
-            return null
-        }
+        if (responseCount(response) >= 2) return null
 
         synchronized(lock) {
             val currentToken = tokenStorage.getAccessToken()
-            val requestToken = response.request.header("Authorization")?.removePrefix("Bearer ")?.trim()
+            val requestToken = response.request.header("Authorization")
+                ?.removePrefix("Bearer ")
+                ?.trim()
 
-            // If token was already refreshed by another thread while waiting for lock, retry with existing new token
-            if (currentToken != null && currentToken != requestToken) {
+            if (!currentToken.isNullOrBlank() && currentToken != requestToken) {
                 return response.request.newBuilder()
                     .header("Authorization", "Bearer $currentToken")
                     .build()
             }
 
-            val refreshToken = tokenStorage.getRefreshToken() ?: run {
-                tokenStorage.clearAuth()
-                onSessionRevoked()
-                return null
-            }
+            val refreshToken = tokenStorage.getRefreshToken() ?: return revoke()
+            val newTokens = performRefreshTokenCall(refreshToken) ?: return revoke()
 
-            // Perform synchronous refresh call
-            val newTokens = performRefreshTokenCall(refreshToken)
-            if (newTokens != null) {
-                tokenStorage.saveTokens(newTokens.accessToken, newTokens.refreshToken)
-                return response.request.newBuilder()
-                    .header("Authorization", "Bearer ${newTokens.accessToken}")
-                    .build()
-            } else {
-                // Refresh failed or revoked
-                tokenStorage.clearAuth()
-                onSessionRevoked()
-                return null
-            }
+            tokenStorage.saveTokens(newTokens.accessToken, newTokens.refreshToken)
+            return response.request.newBuilder()
+                .header("Authorization", "Bearer ${newTokens.accessToken}")
+                .build()
         }
     }
 
-    private fun performRefreshTokenCall(refreshToken: String): RefreshTokenResponse? {
+    private fun performRefreshTokenCall(refreshToken: String): TokenResponse? {
         return try {
-            val client = OkHttpClient.Builder().build()
-            val jsonAdapter = moshi.adapter(RefreshTokenRequest::class.java)
-            val requestBodyString = jsonAdapter.toJson(
-                RefreshTokenRequest(
-                    refreshToken = refreshToken,
-                    deviceId = tokenStorage.getDeviceId()
-                )
+            val adapter = moshi.adapter(RefreshTokenRequest::class.java)
+            val body = adapter.toJson(
+                RefreshTokenRequest(refreshToken, tokenStorage.getDeviceId())
             )
-
             val request = Request.Builder()
-                .url("${AshianMelkApiService.BASE_URL}auth/refresh-token")
+                .url("${AshianMelkApiService.BASE_URL}auth/refresh")
                 .header("X-Device-Id", tokenStorage.getDeviceId())
-                .post(requestBodyString.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .header("Accept", "application/json")
+                .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
 
-            val callResponse = client.newCall(request).execute()
-            if (!callResponse.isSuccessful) return null
-
-            val responseBodyString = callResponse.body?.string() ?: return null
-            val type = Types.newParameterizedType(BaseApiResponse::class.java, RefreshTokenResponse::class.java)
-            val adapter = moshi.adapter<BaseApiResponse<RefreshTokenResponse>>(type)
-            val result = adapter.fromJson(responseBodyString)
-            result?.data
-        } catch (e: Exception) {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .build()
+                .newCall(request)
+                .execute()
+                .use { refreshResponse ->
+                    if (!refreshResponse.isSuccessful) return null
+                    val json = refreshResponse.body?.string() ?: return null
+                    val type = Types.newParameterizedType(BaseApiResponse::class.java, TokenResponse::class.java)
+                    moshi.adapter<BaseApiResponse<TokenResponse>>(type).fromJson(json)?.data
+                }
+        } catch (_: Exception) {
             null
         }
+    }
+
+    private fun revoke(): Request? {
+        tokenStorage.clearAuth()
+        onSessionRevoked()
+        return null
     }
 
     private fun responseCount(response: Response): Int {
