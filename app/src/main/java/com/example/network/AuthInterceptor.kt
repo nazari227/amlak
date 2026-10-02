@@ -16,9 +16,17 @@ class AuthInterceptor(
             .header("Accept", "application/json")
             .header("Accept-Language", "fa-IR,fa;q=0.9,en;q=0.8")
 
-        // Attach Authorization header if access token exists and not already provided
+        val publicAuthEndpoint =
+            originalRequest.url.encodedPath.endsWith("/auth/login") ||
+            originalRequest.url.encodedPath.endsWith("/auth/refresh")
+
+        // Never attach a stale bearer token to login/refresh. Those endpoints use
+        // credentials or the refresh token in the request body.
         val accessToken = tokenStorage.getAccessToken()
-        if (!accessToken.isNullOrBlank() && originalRequest.header("Authorization") == null) {
+        if (!publicAuthEndpoint &&
+            !accessToken.isNullOrBlank() &&
+            originalRequest.header("Authorization") == null
+        ) {
             requestBuilder.header("Authorization", "Bearer $accessToken")
         }
 
