@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ashian_melk_logo_1790958746486"
-        android:gravity="center" />
+        android:width="76dp"
+        android:height="76dp"
+        android:gravity="center"
+        android:drawable="@drawable/ic_brand_mark" />
 </layer-list>
