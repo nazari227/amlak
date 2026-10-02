@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.ui.theme.*
+import com.example.presentation.branding.AshianBrandMark
 
 @Composable
 fun LoginScreen(
@@ -72,21 +73,10 @@ fun LoginScreen(
                         .padding(28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Logo mark
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(72.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Apartment,
-                                contentDescription = "آشیان ملک",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(38.dp)
-                            )
-                        }
-                    }
+                    AshianBrandMark(
+                        modifier = Modifier.size(82.dp),
+                        animate = true
+                    )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
