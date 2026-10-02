@@ -88,23 +88,27 @@ fun PropertyDetailScreen(
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    val lat = propertyState?.latitude
+                    val lng = propertyState?.longitude
                     Button(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_DIAL).apply {
-                                data = Uri.parse("tel:02122000000")
+                            if (lat != null && lng != null) {
+                                val label = Uri.encode(propertyState?.title ?: "ملک")
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng($label)"))
+                                context.startActivity(intent)
                             }
-                            context.startActivity(intent)
                         },
+                        enabled = lat != null && lng != null,
                         modifier = Modifier
                             .weight(1f)
                             .height(50.dp)
-                            .testTag("action_call_agent"),
+                            .testTag("action_open_map"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Filled.Map, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("تماس با مشاور", fontWeight = FontWeight.Bold)
+                        Text(if (lat != null && lng != null) "باز کردن نقشه" else "موقعیت ثبت نشده", fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
@@ -291,8 +295,21 @@ fun PropertyDetailScreen(
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SpecBox(modifier = Modifier.weight(1f), title = "متراژ", value = PersianUtils.formatArea(property.area), icon = Icons.Outlined.SquareFoot)
                                 SpecBox(modifier = Modifier.weight(1f), title = "تعداد خواب", value = PersianUtils.toPersianDigits(property.rooms), icon = Icons.Outlined.Bed)
-                                SpecBox(modifier = Modifier.weight(1f), title = "طبقه", value = "${PersianUtils.toPersianDigits(property.floor ?: 1)} از ${PersianUtils.toPersianDigits(property.totalFloors ?: 5)}", icon = Icons.Outlined.Layers)
-                                SpecBox(modifier = Modifier.weight(1f), title = "سال ساخت", value = PersianUtils.toPersianDigits(property.yearBuilt ?: 1400), icon = Icons.Outlined.CalendarToday)
+                                SpecBox(
+                                    modifier = Modifier.weight(1f),
+                                    title = "طبقه",
+                                    value = if (property.floor != null) {
+                                        if (property.totalFloors != null) "${PersianUtils.toPersianDigits(property.floor)} از ${PersianUtils.toPersianDigits(property.totalFloors)}"
+                                        else PersianUtils.toPersianDigits(property.floor)
+                                    } else "—",
+                                    icon = Icons.Outlined.Layers
+                                )
+                                SpecBox(
+                                    modifier = Modifier.weight(1f),
+                                    title = "سال ساخت",
+                                    value = property.yearBuilt?.let { PersianUtils.toPersianDigits(it) } ?: "—",
+                                    icon = Icons.Outlined.CalendarToday
+                                )
                             }
                         }
                     }
@@ -328,16 +345,30 @@ fun PropertyDetailScreen(
                                             modifier = Modifier.size(36.dp)
                                         )
                                         Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = "مختصات ثبت شده در سرور: ${property.latitude ?: 35.6892} , ${property.longitude ?: 51.3890}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = NeutralMedium
-                                        )
-                                        Text(
-                                            text = property.address ?: "${property.city}، ${property.neighborhood}",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = NeutralDark
-                                        )
+                                        if (property.latitude != null && property.longitude != null) {
+                                            Text(
+                                                text = "مختصات ثبت‌شده: ${property.latitude} , ${property.longitude}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = NeutralMedium
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "برای این پرونده موقعیت جغرافیایی ثبت نشده است.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = NeutralMedium
+                                            )
+                                        }
+                                        val locationText = property.address?.takeIf { it.isNotBlank() }
+                                            ?: listOf(property.city, property.neighborhood)
+                                                .filter { it.isNotBlank() }
+                                                .joinToString("، ")
+                                        if (locationText.isNotBlank()) {
+                                            Text(
+                                                text = locationText,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = NeutralDark
+                                            )
+                                        }
                                     }
                                 }
                             }
