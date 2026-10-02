@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 data class TasksUiState(
     val isLoading: Boolean = false,
     val tasks: List<TaskItem> = emptyList(),
-    val activeTab: String = "today", // "today", "overdue", "upcoming"
+    val activeTab: String = "today",
     val isReportDialogOpen: Boolean = false,
     val selectedTaskForReport: TaskItem? = null,
     val reportSubmittedSuccess: Boolean = false,
@@ -23,13 +23,10 @@ data class TasksUiState(
 class TasksViewModel(
     private val taskRepository: TaskRepository
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(TasksUiState())
     val uiState: StateFlow<TasksUiState> = _uiState.asStateFlow()
 
-    init {
-        loadTasks()
-    }
+    init { loadTasks() }
 
     fun selectTab(tab: String) {
         _uiState.value = _uiState.value.copy(activeTab = tab)
@@ -39,30 +36,33 @@ class TasksViewModel(
     fun loadTasks(tab: String = _uiState.value.activeTab) {
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val result = taskRepository.getTasks(tab)
-            if (result.isSuccess) {
-                _uiState.value = _uiState.value.copy(
+            when (val result = taskRepository.getTasks(tab)) {
+                is NetworkResult.Success -> _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    tasks = result.getOrNull() ?: emptyList(),
+                    tasks = result.data,
                     errorMessage = null
                 )
-            } else {
-                _uiState.value = _uiState.value.copy(
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    errorMessage = (result as? NetworkResult.Error)?.message
+                    errorMessage = result.message
                 )
+                is NetworkResult.Loading -> Unit
             }
         }
     }
 
     fun completeTask(taskId: Long) {
         viewModelScope.launch {
-            taskRepository.completeTask(taskId)
-            // Update in-memory list
-            val updated = _uiState.value.tasks.map {
-                if (it.id == taskId) it.copy(isCompleted = true) else it
+            when (val result = taskRepository.completeTask(taskId)) {
+                is NetworkResult.Success -> {
+                    val updated = _uiState.value.tasks.map {
+                        if (it.id == taskId) result.data else it
+                    }
+                    _uiState.value = _uiState.value.copy(tasks = updated, errorMessage = null)
+                }
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(errorMessage = result.message)
+                is NetworkResult.Loading -> Unit
             }
-            _uiState.value = _uiState.value.copy(tasks = updated)
         }
     }
 
@@ -70,7 +70,8 @@ class TasksViewModel(
         _uiState.value = _uiState.value.copy(
             isReportDialogOpen = true,
             selectedTaskForReport = task,
-            reportSubmittedSuccess = false
+            reportSubmittedSuccess = false,
+            errorMessage = null
         )
     }
 
@@ -82,11 +83,15 @@ class TasksViewModel(
         if (reportText.isBlank()) return
         viewModelScope.launch {
             val taskId = _uiState.value.selectedTaskForReport?.id
-            taskRepository.submitWorkReport(taskId, reportText, hours)
-            _uiState.value = _uiState.value.copy(
-                isReportDialogOpen = false,
-                reportSubmittedSuccess = true
-            )
+            when (val result = taskRepository.submitWorkReport(taskId, reportText, hours)) {
+                is NetworkResult.Success -> _uiState.value = _uiState.value.copy(
+                    isReportDialogOpen = false,
+                    reportSubmittedSuccess = true,
+                    errorMessage = null
+                )
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(errorMessage = result.message)
+                is NetworkResult.Loading -> Unit
+            }
         }
     }
 }
