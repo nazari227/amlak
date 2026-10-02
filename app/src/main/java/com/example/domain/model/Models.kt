@@ -12,7 +12,8 @@ data class UserProfile(
     val branchId: Long,
     val branchName: String,
     val role: String,
-    val avatarUrl: String? = null
+    val avatarUrl: String? = null,
+    val capabilities: Map<String, Boolean> = emptyMap()
 )
 
 @JsonClass(generateAdapter = true)
