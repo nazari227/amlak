@@ -5,36 +5,33 @@ import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
 data class BaseApiResponse<T>(
-    @Json(name = "success") val success: Boolean = true,
-    @Json(name = "message") val message: String? = null,
     @Json(name = "data") val data: T? = null,
-    @Json(name = "code") val code: String? = null
+    @Json(name = "meta") val meta: ApiMeta? = null
 )
 
-// --- Auth DTOs ---
+@JsonClass(generateAdapter = true)
+data class ApiMeta(
+    @Json(name = "api_version") val apiVersion: String? = null,
+    @Json(name = "request_id") val requestId: String? = null
+)
 
 @JsonClass(generateAdapter = true)
 data class LoginRequest(
-    @Json(name = "username") val username: String,
+    @Json(name = "login") val login: String,
     @Json(name = "password") val password: String,
+    @Json(name = "mfa_code") val mfaCode: String = "",
     @Json(name = "device_id") val deviceId: String,
-    @Json(name = "device_name") val deviceName: String
+    @Json(name = "device_name") val deviceName: String,
+    @Json(name = "platform") val platform: String = "android"
 )
 
 @JsonClass(generateAdapter = true)
-data class LoginResponse(
-    @Json(name = "status") val status: String, // "success" or "mfa_required"
-    @Json(name = "access_token") val accessToken: String? = null,
-    @Json(name = "refresh_token") val refreshToken: String? = null,
-    @Json(name = "mfa_token") val mfaToken: String? = null,
-    @Json(name = "user") val user: UserDto? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class MfaVerifyRequest(
-    @Json(name = "mfa_token") val mfaToken: String,
-    @Json(name = "code") val code: String,
-    @Json(name = "device_id") val deviceId: String
+data class TokenResponse(
+    @Json(name = "token_type") val tokenType: String = "Bearer",
+    @Json(name = "access_token") val accessToken: String,
+    @Json(name = "expires_in") val expiresIn: Int,
+    @Json(name = "refresh_token") val refreshToken: String,
+    @Json(name = "refresh_expires_in") val refreshExpiresIn: Int
 )
 
 @JsonClass(generateAdapter = true)
@@ -44,203 +41,292 @@ data class RefreshTokenRequest(
 )
 
 @JsonClass(generateAdapter = true)
-data class RefreshTokenResponse(
-    @Json(name = "access_token") val accessToken: String,
-    @Json(name = "refresh_token") val refreshToken: String
-)
-
-@JsonClass(generateAdapter = true)
-data class LogoutDeviceRequest(
-    @Json(name = "device_id") val deviceId: String
-)
-
-@JsonClass(generateAdapter = true)
 data class UserDto(
     @Json(name = "id") val id: Long,
-    @Json(name = "username") val username: String,
-    @Json(name = "full_name") val fullName: String,
-    @Json(name = "phone") val phone: String,
-    @Json(name = "email") val email: String? = null,
-    @Json(name = "branch_id") val branchId: Long,
-    @Json(name = "branch_name") val branchName: String,
-    @Json(name = "role") val role: String,
-    @Json(name = "avatar_url") val avatarUrl: String? = null
+    @Json(name = "display_name") val displayName: String = "",
+    @Json(name = "staff_type") val staffType: String = "",
+    @Json(name = "branch_id") val branchId: Long = 0,
+    @Json(name = "capabilities") val capabilities: Map<String, Boolean> = emptyMap()
 )
+
+@JsonClass(generateAdapter = true)
+data class MeResponse(@Json(name = "user") val user: UserDto)
 
 @JsonClass(generateAdapter = true)
 data class DeviceSessionDto(
     @Json(name = "session_id") val sessionId: String,
-    @Json(name = "device_name") val deviceName: String,
-    @Json(name = "last_active") val lastActive: String,
-    @Json(name = "ip_address") val ipAddress: String,
-    @Json(name = "is_current") val isCurrent: Boolean
+    @Json(name = "device_name") val deviceName: String = "",
+    @Json(name = "platform") val platform: String = "",
+    @Json(name = "issued_at") val issuedAt: String = "",
+    @Json(name = "last_used_at") val lastUsedAt: String = "",
+    @Json(name = "access_expires_at") val accessExpiresAt: String = "",
+    @Json(name = "refresh_expires_at") val refreshExpiresAt: String = ""
 )
 
-// --- Property DTOs ---
+@JsonClass(generateAdapter = true)
+data class SessionsResponse(@Json(name = "sessions") val sessions: List<DeviceSessionDto> = emptyList())
 
 @JsonClass(generateAdapter = true)
-data class PropertyListResponse(
-    @Json(name = "items") val items: List<PropertyDto> = emptyList(),
-    @Json(name = "total") val total: Int = 0,
+data class PaginationDto(
     @Json(name = "page") val page: Int = 1,
-    @Json(name = "total_pages") val totalPages: Int = 1
+    @Json(name = "per_page") val perPage: Int = 20,
+    @Json(name = "total") val total: Int = 0,
+    @Json(name = "pages") val pages: Int = 1
 )
 
 @JsonClass(generateAdapter = true)
-data class PropertyDto(
+data class CasePropertyDto(
+    @Json(name = "id") val id: Long = 0,
+    @Json(name = "code") val code: String = "",
+    @Json(name = "title") val title: String = "",
+    @Json(name = "type") val type: String = "",
+    @Json(name = "area") val area: Double = 0.0,
+    @Json(name = "land_area") val landArea: Double = 0.0,
+    @Json(name = "bedrooms") val bedrooms: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class CaseLocationDto(
+    @Json(name = "district") val district: String = "",
+    @Json(name = "neighborhood") val neighborhood: String = ""
+)
+
+@JsonClass(generateAdapter = true)
+data class CaseDto(
     @Json(name = "id") val id: Long,
-    @Json(name = "code") val code: String,
-    @Json(name = "title") val title: String,
-    @Json(name = "transaction_type") val transactionType: String,
-    @Json(name = "property_type") val propertyType: String,
-    @Json(name = "status") val status: String,
-    @Json(name = "branch_id") val branchId: Long,
-    @Json(name = "branch_name") val branchName: String,
-    @Json(name = "consultant_name") val consultantName: String,
-    @Json(name = "price") val price: Long,
-    @Json(name = "mortgage_price") val mortgagePrice: Long = 0,
-    @Json(name = "area") val area: Double,
-    @Json(name = "rooms") val rooms: Int,
-    @Json(name = "floor") val floor: Int? = null,
-    @Json(name = "total_floors") val totalFloors: Int? = null,
-    @Json(name = "year_built") val yearBuilt: Int? = null,
-    @Json(name = "city") val city: String,
-    @Json(name = "neighborhood") val neighborhood: String,
-    @Json(name = "address") val address: String? = null,
-    @Json(name = "latitude") val latitude: Double? = null,
-    @Json(name = "longitude") val longitude: Double? = null,
-    @Json(name = "thumbnail") val thumbnail: String? = null,
-    @Json(name = "images") val images: List<String> = emptyList(),
-    @Json(name = "features") val features: List<String> = emptyList(),
-    @Json(name = "base_version") val baseVersion: Int = 1,
-    @Json(name = "created_at") val createdAt: String? = null,
-    @Json(name = "updated_at") val updatedAt: String? = null
+    @Json(name = "case_code") val caseCode: String = "",
+    @Json(name = "status") val status: String = "",
+    @Json(name = "transaction_type") val transactionType: String = "",
+    @Json(name = "priority") val priority: String = "",
+    @Json(name = "branch_id") val branchId: Long = 0,
+    @Json(name = "branch_name") val branchName: String = "",
+    @Json(name = "assigned_agent_user_id") val assignedAgentUserId: Long = 0,
+    @Json(name = "property") val property: CasePropertyDto = CasePropertyDto(),
+    @Json(name = "location") val location: CaseLocationDto = CaseLocationDto(),
+    @Json(name = "updated_at") val updatedAt: String = "",
+    @Json(name = "closed_at") val closedAt: String = "",
+    @Json(name = "version") val version: String = ""
 )
 
 @JsonClass(generateAdapter = true)
-data class CreatePropertyRequest(
-    @Json(name = "idempotency_key") val idempotencyKey: String,
-    @Json(name = "base_version") val baseVersion: Int = 1,
+data class CasesResponse(
+    @Json(name = "items") val items: List<CaseDto> = emptyList(),
+    @Json(name = "pagination") val pagination: PaginationDto = PaginationDto()
+)
+
+@JsonClass(generateAdapter = true)
+data class CaseDetailResponse(
+    @Json(name = "case") val caseItem: CaseDto,
+    @Json(name = "server_version") val serverVersion: String = ""
+)
+
+@JsonClass(generateAdapter = true)
+data class CaseMutationResponse(
+    @Json(name = "case") val caseItem: CaseDto,
+    @Json(name = "server_version") val serverVersion: String? = null,
+    @Json(name = "idempotent_replay") val idempotentReplay: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class CasePayloadRequest(
     @Json(name = "title") val title: String,
     @Json(name = "transaction_type") val transactionType: String,
     @Json(name = "property_type") val propertyType: String,
-    @Json(name = "price") val price: Long,
-    @Json(name = "mortgage_price") val mortgagePrice: Long = 0,
-    @Json(name = "area") val area: Double,
-    @Json(name = "rooms") val rooms: Int,
-    @Json(name = "floor") val floor: Int? = null,
+    @Json(name = "price_display_mode") val priceDisplayMode: String = "numeric",
+    @Json(name = "price") val price: Long? = null,
+    @Json(name = "deposit_amount") val depositAmount: Long? = null,
+    @Json(name = "rent_amount") val rentAmount: Long? = null,
+    @Json(name = "area") val area: Double? = null,
+    @Json(name = "bedrooms") val bedrooms: Int? = null,
+    @Json(name = "build_year") val buildYear: Int? = null,
+    @Json(name = "floor_no") val floorNo: Int? = null,
     @Json(name = "total_floors") val totalFloors: Int? = null,
-    @Json(name = "year_built") val yearBuilt: Int? = null,
     @Json(name = "owner_name") val ownerName: String,
-    @Json(name = "owner_phone") val ownerPhone: String,
-    @Json(name = "owner_notes") val ownerNotes: String? = null,
-    @Json(name = "city") val city: String,
-    @Json(name = "neighborhood") val neighborhood: String,
-    @Json(name = "address") val address: String? = null,
-    @Json(name = "latitude") val latitude: Double? = null,
-    @Json(name = "longitude") val longitude: Double? = null,
-    @Json(name = "features") val features: List<String> = emptyList(),
-    @Json(name = "description") val description: String? = null
+    @Json(name = "owner_mobile") val ownerMobile: String,
+    @Json(name = "owner_phone") val ownerPhone: String? = null,
+    @Json(name = "city_name") val cityName: String,
+    @Json(name = "district_name") val districtName: String = "",
+    @Json(name = "neighborhood_name") val neighborhoodName: String = "",
+    @Json(name = "exact_address") val exactAddress: String? = null,
+    @Json(name = "exact_lat") val exactLat: Double? = null,
+    @Json(name = "exact_lng") val exactLng: Double? = null,
+    @Json(name = "public_description") val publicDescription: String? = null,
+    @Json(name = "internal_summary") val internalSummary: String? = null,
+    @Json(name = "priority") val priority: String = "normal"
 )
 
 @JsonClass(generateAdapter = true)
-data class ImageUploadChunkResponse(
-    @Json(name = "image_id") val imageId: String,
-    @Json(name = "chunk_index") val chunkIndex: Int,
-    @Json(name = "is_completed") val isCompleted: Boolean,
-    @Json(name = "url") val url: String? = null
+data class CreateCaseRequest(
+    @Json(name = "payload") val payload: CasePayloadRequest,
+    @Json(name = "draft_client_key") val draftClientKey: String? = null
 )
 
-// --- Demand DTOs ---
+@JsonClass(generateAdapter = true)
+data class UpdateCaseRequest(
+    @Json(name = "base_version") val baseVersion: String,
+    @Json(name = "payload") val payload: CasePayloadRequest
+)
+
+@JsonClass(generateAdapter = true)
+data class BeginUploadRequest(
+    @Json(name = "file_name") val fileName: String,
+    @Json(name = "mime_type") val mimeType: String,
+    @Json(name = "total_bytes") val totalBytes: Long,
+    @Json(name = "case_id") val caseId: Long? = null,
+    @Json(name = "draft_client_key") val draftClientKey: String? = null,
+    @Json(name = "sha256") val sha256: String
+)
+
+@JsonClass(generateAdapter = true)
+data class UploadDto(
+    @Json(name = "upload_id") val uploadId: String,
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "offset") val offset: Long = 0,
+    @Json(name = "total_bytes") val totalBytes: Long = 0,
+    @Json(name = "chunk_max_bytes") val chunkMaxBytes: Long? = null,
+    @Json(name = "case_id") val caseId: Long = 0,
+    @Json(name = "draft_client_key") val draftClientKey: String = "",
+    @Json(name = "attachment_id") val attachmentId: Long = 0,
+    @Json(name = "expires_at") val expiresAt: String = "",
+    @Json(name = "complete") val complete: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class UploadResponse(@Json(name = "upload") val upload: UploadDto)
+
+@JsonClass(generateAdapter = true)
+data class DemandLocationDto(
+    @Json(name = "city") val city: String = "",
+    @Json(name = "district") val district: String = "",
+    @Json(name = "neighborhood") val neighborhood: String = ""
+)
+
+@JsonClass(generateAdapter = true)
+data class DemandBudgetDto(
+    @Json(name = "min") val min: Double = 0.0,
+    @Json(name = "max") val max: Double = 0.0,
+    @Json(name = "deposit_max") val depositMax: Double = 0.0,
+    @Json(name = "rent_max") val rentMax: Double = 0.0
+)
+
+@JsonClass(generateAdapter = true)
+data class DemandRequirementsDto(
+    @Json(name = "area_min") val areaMin: Double = 0.0,
+    @Json(name = "area_max") val areaMax: Double = 0.0,
+    @Json(name = "bedrooms_min") val bedroomsMin: Int = 0
+)
 
 @JsonClass(generateAdapter = true)
 data class DemandDto(
     @Json(name = "id") val id: Long,
-    @Json(name = "client_name") val clientName: String,
-    @Json(name = "client_phone") val clientPhone: String,
-    @Json(name = "transaction_type") val transactionType: String,
-    @Json(name = "property_type") val propertyType: String,
-    @Json(name = "preferred_neighborhoods") val preferredNeighborhoods: List<String> = emptyList(),
-    @Json(name = "min_budget") val minBudget: Long,
-    @Json(name = "max_budget") val maxBudget: Long,
-    @Json(name = "min_area") val minArea: Double,
-    @Json(name = "rooms") val rooms: Int? = null,
-    @Json(name = "status") val status: String,
-    @Json(name = "assigned_consultant") val assignedConsultant: String,
-    @Json(name = "matching_properties_count") val matchingPropertiesCount: Int = 0,
-    @Json(name = "follow_up_notes") val followUpNotes: List<DemandFollowUpNoteDto> = emptyList(),
-    @Json(name = "created_at") val createdAt: String
+    @Json(name = "status") val status: String = "",
+    @Json(name = "transaction_type") val transactionType: String = "",
+    @Json(name = "property_type") val propertyType: String = "",
+    @Json(name = "assigned_branch_id") val assignedBranchId: Long = 0,
+    @Json(name = "assigned_agent_user_id") val assignedAgentUserId: Long = 0,
+    @Json(name = "intake_recipient") val intakeRecipient: String = "",
+    @Json(name = "location") val location: DemandLocationDto = DemandLocationDto(),
+    @Json(name = "budget") val budget: DemandBudgetDto = DemandBudgetDto(),
+    @Json(name = "requirements") val requirements: DemandRequirementsDto = DemandRequirementsDto(),
+    @Json(name = "match_count") val matchCount: Int = 0,
+    @Json(name = "proposal_count") val proposalCount: Int = 0,
+    @Json(name = "last_interaction_at") val lastInteractionAt: String = "",
+    @Json(name = "next_follow_up_at") val nextFollowUpAt: String = "",
+    @Json(name = "created_at") val createdAt: String = "",
+    @Json(name = "updated_at") val updatedAt: String = ""
 )
 
 @JsonClass(generateAdapter = true)
-data class DemandFollowUpNoteDto(
-    @Json(name = "id") val id: Long,
-    @Json(name = "author") val author: String,
-    @Json(name = "content") val content: String,
-    @Json(name = "created_at") val createdAt: String
+data class DemandMatchDto(
+    @Json(name = "listing_id") val listingId: Long = 0,
+    @Json(name = "listing_public_id") val listingPublicId: String = "",
+    @Json(name = "property_id") val propertyId: Long = 0,
+    @Json(name = "score") val score: Double = 0.0,
+    @Json(name = "status") val status: String = "",
+    @Json(name = "title") val title: String = "",
+    @Json(name = "property_type") val propertyType: String = "",
+    @Json(name = "area") val area: Double = 0.0,
+    @Json(name = "bedrooms") val bedrooms: Int = 0,
+    @Json(name = "district") val district: String = "",
+    @Json(name = "neighborhood") val neighborhood: String = "",
+    @Json(name = "amount") val amount: Double? = null
 )
 
 @JsonClass(generateAdapter = true)
-data class AddFollowUpNoteRequest(
-    @Json(name = "content") val content: String
+data class DemandsResponse(
+    @Json(name = "items") val items: List<DemandDto> = emptyList(),
+    @Json(name = "pagination") val pagination: PaginationDto = PaginationDto()
 )
 
-// --- Task & Appointment DTOs ---
+@JsonClass(generateAdapter = true)
+data class DemandDetailResponse(
+    @Json(name = "demand") val demand: DemandDto,
+    @Json(name = "matches") val matches: List<DemandMatchDto> = emptyList()
+)
 
 @JsonClass(generateAdapter = true)
 data class TaskDto(
     @Json(name = "id") val id: Long,
-    @Json(name = "title") val title: String,
-    @Json(name = "description") val description: String,
-    @Json(name = "category") val category: String,
-    @Json(name = "due_date") val dueDate: String,
-    @Json(name = "is_completed") val isCompleted: Boolean,
-    @Json(name = "is_overdue") val isOverdue: Boolean,
-    @Json(name = "related_entity_id") val relatedEntityId: Long? = null,
-    @Json(name = "related_entity_type") val relatedEntityType: String? = null
+    @Json(name = "title") val title: String = "",
+    @Json(name = "status") val status: String = "",
+    @Json(name = "priority") val priority: String = "",
+    @Json(name = "category") val category: String = "",
+    @Json(name = "due_at") val dueAt: String = "",
+    @Json(name = "assigned_to") val assignedTo: Long = 0,
+    @Json(name = "branch_id") val branchId: Long = 0,
+    @Json(name = "branch_name") val branchName: String = "",
+    @Json(name = "case_id") val caseId: Long = 0,
+    @Json(name = "case_code") val caseCode: String = "",
+    @Json(name = "demand_id") val demandId: Long = 0
 )
 
 @JsonClass(generateAdapter = true)
-data class AppointmentDto(
-    @Json(name = "id") val id: Long,
-    @Json(name = "title") val title: String,
-    @Json(name = "client_name") val clientName: String,
-    @Json(name = "property_title") val propertyTitle: String,
-    @Json(name = "time") val time: String,
-    @Json(name = "location") val location: String
-)
+data class TasksResponse(@Json(name = "items") val items: List<TaskDto> = emptyList())
 
 @JsonClass(generateAdapter = true)
-data class WorkReportRequest(
-    @Json(name = "task_id") val taskId: Long? = null,
-    @Json(name = "report_text") val reportText: String,
-    @Json(name = "hours_spent") val hoursSpent: Double = 1.0
-)
+data class TaskResponse(@Json(name = "task") val task: TaskDto)
 
-// --- Notification DTOs ---
+@JsonClass(generateAdapter = true)
+data class TaskUpdateRequest(
+    @Json(name = "status") val status: String,
+    @Json(name = "note") val note: String = "",
+    @Json(name = "details") val details: Map<String, String> = emptyMap()
+)
 
 @JsonClass(generateAdapter = true)
 data class NotificationDto(
     @Json(name = "id") val id: Long,
-    @Json(name = "title") val title: String,
-    @Json(name = "message") val message: String,
-    @Json(name = "type") val type: String,
-    @Json(name = "target_id") val targetId: Long? = null,
-    @Json(name = "is_read") val isRead: Boolean,
-    @Json(name = "created_at") val createdAt: String
+    @Json(name = "type") val type: String = "",
+    @Json(name = "title") val title: String = "",
+    @Json(name = "body") val body: String = "",
+    @Json(name = "url") val url: String = "",
+    @Json(name = "entity_type") val entityType: String = "",
+    @Json(name = "entity_id") val entityId: Long = 0,
+    @Json(name = "read") val read: Boolean = false,
+    @Json(name = "created_at") val createdAt: String = ""
 )
 
-// --- Dashboard Summary DTO ---
+@JsonClass(generateAdapter = true)
+data class NotificationsResponse(
+    @Json(name = "items") val items: List<NotificationDto> = emptyList(),
+    @Json(name = "unread") val unread: Int = 0,
+    @Json(name = "pagination") val pagination: PaginationDto = PaginationDto()
+)
 
 @JsonClass(generateAdapter = true)
-data class DashboardSummaryDto(
-    @Json(name = "today_tasks_count") val todayTasksCount: Int = 0,
-    @Json(name = "today_appointments_count") val todayAppointmentsCount: Int = 0,
-    @Json(name = "new_demands_count") val newDemandsCount: Int = 0,
-    @Json(name = "unread_notifications_count") val unreadNotificationsCount: Int = 0,
-    @Json(name = "active_properties_count") val activePropertiesCount: Int = 0,
-    @Json(name = "today_tasks") val todayTasks: List<TaskDto> = emptyList(),
-    @Json(name = "today_appointments") val todayAppointments: List<AppointmentDto> = emptyList(),
+data class BootstrapSummaryDto(
+    @Json(name = "active_cases") val activeCases: Int = 0,
+    @Json(name = "active_demands") val activeDemands: Int = 0,
+    @Json(name = "upcoming_appointments") val upcomingAppointments: Int = 0,
+    @Json(name = "unread_notifications") val unreadNotifications: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class BootstrapDto(
+    @Json(name = "user") val user: UserDto,
+    @Json(name = "summary") val summary: BootstrapSummaryDto = BootstrapSummaryDto(),
+    @Json(name = "recent_cases") val recentCases: List<CaseDto> = emptyList(),
     @Json(name = "recent_demands") val recentDemands: List<DemandDto> = emptyList(),
-    @Json(name = "recent_notifications") val recentNotifications: List<NotificationDto> = emptyList()
+    @Json(name = "tasks") val tasks: List<TaskDto> = emptyList(),
+    @Json(name = "api_features") val apiFeatures: Map<String, Boolean> = emptyMap()
 )
