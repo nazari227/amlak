@@ -6,8 +6,11 @@ import android.graphics.BitmapFactory
 import com.example.core.network.NetworkResult
 import com.example.data.local.dao.PropertyDao
 import com.example.data.local.entity.PropertyEntity
-import com.example.data.model.CreatePropertyRequest
-import com.example.data.model.PropertyDto
+import com.example.data.model.BeginUploadRequest
+import com.example.data.model.CaseDto
+import com.example.data.model.CasePayloadRequest
+import com.example.data.model.CreateCaseRequest
+import com.example.data.model.UpdateCaseRequest
 import com.example.domain.model.Property
 import com.example.domain.model.PropertyDraft
 import com.example.domain.model.PropertyFilter
@@ -16,18 +19,15 @@ import com.example.network.AshianMelkApiService
 import com.example.security.EncryptedDraftStorage
 import com.example.security.SecurityUtils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 
 class PropertyRepositoryImpl(
     private val context: Context,
@@ -42,47 +42,29 @@ class PropertyRepositoryImpl(
         filter: PropertyFilter?
     ): NetworkResult<List<Property>> = withContext(Dispatchers.IO) {
         try {
-            val response = apiService.getProperties(
+            val response = apiService.getCases(
                 page = page,
                 perPage = perPage,
-                search = filter?.searchQuery,
-                branchId = filter?.branchId,
-                transactionType = filter?.transactionType,
-                propertyType = filter?.propertyType,
+                search = filter?.searchQuery ?: filter?.code ?: filter?.neighborhood,
                 status = filter?.status,
-                consultantId = filter?.consultantId,
-                minPrice = filter?.minPrice,
-                maxPrice = filter?.maxPrice,
-                minArea = filter?.minArea,
-                maxArea = filter?.maxArea,
-                neighborhood = filter?.neighborhood,
-                code = filter?.code
+                transactionType = normalizeTransaction(filter?.transactionType),
+                lifecycle = "active"
             )
-
-            if (response.isSuccessful && response.body()?.data != null) {
-                val dtoList = response.body()!!.data!!.items
-                val entities = dtoList.map { it.toEntity() }
-                // Update local Room cache on first page load
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                val properties = data.items.map { it.toDomain() }
                 if (page == 1 && filter == null) {
                     propertyDao.clearProperties()
-                    propertyDao.insertProperties(entities)
+                    propertyDao.insertProperties(properties.map { it.toEntity() })
                 }
-                NetworkResult.Success(dtoList.map { it.toDomain() })
+                NetworkResult.Success(properties)
             } else {
-                // If API returned error, fallback to offline Room cache
                 loadFromCacheOrError(response.code(), response.message())
             }
         } catch (e: Exception) {
-            // Offline fallback to Room
             val cached = propertyDao.getAllPropertiesFlow().first()
-            if (cached.isNotEmpty()) {
-                NetworkResult.Success(cached.map { it.toDomain() })
-            } else {
-                // Populate initial realistic enterprise properties for Ashian Melk offline preview
-                val sampleEntities = getAshianMelkInitialEntities()
-                propertyDao.insertProperties(sampleEntities)
-                NetworkResult.Success(sampleEntities.map { it.toDomain() })
-            }
+            if (cached.isNotEmpty()) NetworkResult.Success(cached.map { it.toDomain() })
+            else NetworkResult.Error("اتصال به سرور املاک برقرار نشد و داده ذخیره‌شده‌ای روی دستگاه وجود ندارد.", cause = e)
         }
     }
 
@@ -91,195 +73,182 @@ class PropertyRepositoryImpl(
         return if (cached.isNotEmpty()) {
             NetworkResult.Success(cached.map { it.toDomain() })
         } else {
-            NetworkResult.Error("خطا در دریافت لیست املاک: $message", code)
+            NetworkResult.Error("دریافت پرونده‌های ملکی انجام نشد: $message", code)
         }
     }
 
-    override suspend fun getPropertyDetail(id: Long): NetworkResult<Property> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiService.getPropertyDetail(id)
-                if (response.isSuccessful && response.body()?.data != null) {
-                    NetworkResult.Success(response.body()!!.data!!.toDomain())
-                } else {
-                    val cached = propertyDao.getPropertyById(id)
-                    if (cached != null) {
-                        NetworkResult.Success(cached.toDomain())
-                    } else {
-                        NetworkResult.Error("اطلاعات ملک یافت نشد", response.code())
-                    }
-                }
-            } catch (e: Exception) {
+    override suspend fun getPropertyDetail(id: Long): NetworkResult<Property> = withContext(Dispatchers.IO) {
+        try {
+            val response = apiService.getCaseDetail(id)
+            val detail = response.body()?.data
+            if (response.isSuccessful && detail != null) {
+                val property = detail.caseItem.copy(version = detail.serverVersion.ifBlank { detail.caseItem.version }).toDomain()
+                propertyDao.insertProperties(listOf(property.toEntity()))
+                NetworkResult.Success(property)
+            } else {
                 val cached = propertyDao.getPropertyById(id)
-                if (cached != null) {
-                    NetworkResult.Success(cached.toDomain())
-                } else {
-                    NetworkResult.Error("عدم دسترسی به شبکه و نبود حافظه محلی برای این ملک", cause = e)
-                }
+                if (cached != null) NetworkResult.Success(cached.toDomain())
+                else NetworkResult.Error("پرونده موردنظر در محدوده دسترسی شما یافت نشد.", response.code())
             }
+        } catch (e: Exception) {
+            val cached = propertyDao.getPropertyById(id)
+            if (cached != null) NetworkResult.Success(cached.toDomain())
+            else NetworkResult.Error("جزئیات پرونده در حالت آفلاین در دسترس نیست.", cause = e)
         }
+    }
 
     override suspend fun createProperty(
         draft: PropertyDraft,
         onProgress: (Float) -> Unit
     ): NetworkResult<Property> = withContext(Dispatchers.IO) {
+        encryptedDraftStorage.saveDraft(draft)
+        val compressed = mutableListOf<File>()
         try {
-            onProgress(0.1f)
+            onProgress(0.05f)
 
-            // Step 1: Compress images & compute SHA-256 integrity validation
-            val compressedFiles = mutableListOf<File>()
-            for ((index, path) in draft.localImagePaths.withIndex()) {
-                val originalFile = File(path)
-                if (originalFile.exists()) {
-                    val compressed = compressImageFile(originalFile)
-                    val sha256 = SecurityUtils.calculateSha256(compressed)
-                    compressedFiles.add(compressed)
+            for ((index, imagePath) in draft.localImagePaths.withIndex()) {
+                val source = File(imagePath)
+                if (!source.isFile) {
+                    return@withContext NetworkResult.Error("یکی از تصاویر انتخاب‌شده دیگر روی دستگاه موجود نیست.")
                 }
-                onProgress(0.1f + (0.3f * (index + 1) / draft.localImagePaths.size.coerceAtLeast(1)))
+                compressed += compressImageFile(source)
+                onProgress(0.05f + (0.15f * (index + 1) / draft.localImagePaths.size.coerceAtLeast(1)))
             }
 
-            onProgress(0.5f)
+            for ((index, image) in compressed.withIndex()) {
+                val uploadResult = uploadDraftImage(draft.idempotencyKey, image) { progress ->
+                    val imageBase = 0.20f + (0.55f * index / compressed.size.coerceAtLeast(1))
+                    val imageShare = 0.55f / compressed.size.coerceAtLeast(1)
+                    onProgress(imageBase + imageShare * progress)
+                }
+                if (uploadResult is NetworkResult.Error) return@withContext uploadResult
+            }
 
-            // Step 2: Send Property Metadata with Idempotency Key & base_version
-            val request = CreatePropertyRequest(
+            onProgress(0.80f)
+            val response = apiService.createCase(
                 idempotencyKey = draft.idempotencyKey,
-                baseVersion = draft.baseVersion,
-                title = draft.title,
-                transactionType = draft.transactionType,
-                propertyType = draft.propertyType,
-                price = draft.price,
-                mortgagePrice = draft.mortgagePrice,
-                area = draft.area,
-                rooms = draft.rooms,
-                floor = draft.floor,
-                totalFloors = draft.totalFloors,
-                yearBuilt = draft.yearBuilt,
-                ownerName = draft.ownerName,
-                ownerPhone = draft.ownerPhone,
-                ownerNotes = draft.ownerNotes,
-                city = draft.city,
-                neighborhood = draft.neighborhood,
-                address = draft.address,
-                latitude = draft.latitude,
-                longitude = draft.longitude,
-                features = draft.features,
-                description = draft.description
+                request = CreateCaseRequest(
+                    payload = draft.toCasePayload(),
+                    draftClientKey = draft.idempotencyKey
+                )
             )
-
-            val createResponse = apiService.createProperty(
-                idempotencyKey = draft.idempotencyKey,
-                request = request
-            )
-
-            onProgress(0.8f)
-
-            if (createResponse.isSuccessful && createResponse.body()?.data != null) {
-                val created = createResponse.body()!!.data!!
-                // Success: remove encrypted draft
-                encryptedDraftStorage.deleteDraft(draft.idempotencyKey)
-                // Cache into Room
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                val created = data.caseItem.toDomain()
                 propertyDao.insertProperties(listOf(created.toEntity()))
+                encryptedDraftStorage.deleteDraft(draft.idempotencyKey)
                 onProgress(1.0f)
-                NetworkResult.Success(created.toDomain())
-            } else if (createResponse.code() == 409) {
-                // Conflict handling: base_version mismatch
-                NetworkResult.Error(
-                    "تعارض همزمانی (Conflict): نسخه ملک در سرور تغییر کرده است. لطفاً آخرین نسخه را دریافت کنید.",
-                    statusCode = 409
-                )
+                NetworkResult.Success(created)
             } else {
-                // Offline fallback save: keep draft encrypted
-                encryptedDraftStorage.saveDraft(draft)
-                val newId = System.currentTimeMillis() % 100000
-                val offlineProperty = Property(
-                    id = newId,
-                    code = "AM-${1000 + newId % 9000}",
-                    title = draft.title,
-                    transactionType = draft.transactionType,
-                    propertyType = draft.propertyType,
-                    status = "pending",
-                    branchId = 1L,
-                    branchName = "شعبه مرکزی",
-                    consultantName = "مشاور جاری",
-                    price = draft.price,
-                    mortgagePrice = draft.mortgagePrice,
-                    area = draft.area,
-                    rooms = draft.rooms,
-                    city = draft.city,
-                    neighborhood = draft.neighborhood,
-                    address = draft.address,
-                    latitude = draft.latitude,
-                    longitude = draft.longitude,
-                    features = draft.features,
-                    thumbnail = null
+                NetworkResult.Error(
+                    message = when (response.code()) {
+                        400 -> "اطلاعات پرونده کامل یا معتبر نیست. فیلدهای الزامی را بررسی کنید."
+                        403 -> "نقش کاربری شما اجازه ثبت این پرونده یا موقعیت دقیق را ندارد."
+                        409 -> "این ثبت با تغییر دیگری تداخل دارد. اطلاعات را تازه‌سازی کنید."
+                        else -> "ثبت پرونده روی سرور انجام نشد (${response.code()})."
+                    },
+                    statusCode = response.code()
                 )
-                propertyDao.insertProperties(listOf(offlineProperty.toEntity()))
-                onProgress(1.0f)
-                NetworkResult.Success(offlineProperty)
             }
         } catch (e: Exception) {
-            // Keep draft safe in encrypted storage
-            encryptedDraftStorage.saveDraft(draft)
-            NetworkResult.Error("خطا در ارسال اطلاعات به سرور؛ پیش‌نویس به صورت امن در دستگاه ذخیره شد.", cause = e)
+            NetworkResult.Error("ارسال پرونده کامل نشد؛ پیش‌نویس رمزگذاری‌شده روی دستگاه حفظ شد.", cause = e)
+        } finally {
+            compressed.forEach { file ->
+                if (file.parentFile?.name == "compressed_images") file.delete()
+            }
         }
+    }
+
+    private suspend fun uploadDraftImage(
+        draftKey: String,
+        file: File,
+        onProgress: (Float) -> Unit
+    ): NetworkResult<Unit> {
+        val sha256 = SecurityUtils.calculateSha256(file)
+        val begin = apiService.beginUpload(
+            BeginUploadRequest(
+                fileName = file.name,
+                mimeType = "image/jpeg",
+                totalBytes = file.length(),
+                draftClientKey = draftKey,
+                sha256 = sha256
+            )
+        )
+        val upload = begin.body()?.data?.upload
+        if (!begin.isSuccessful || upload == null) {
+            return NetworkResult.Error("شروع بارگذاری تصویر انجام نشد.", begin.code())
+        }
+
+        val maxChunk = (upload.chunkMaxBytes ?: 5_242_880L).coerceIn(64 * 1024L, 5_242_880L)
+        var offset = upload.offset.coerceAtLeast(0)
+        RandomAccessFile(file, "r").use { input ->
+            val buffer = ByteArray(maxChunk.toInt())
+            while (offset < file.length()) {
+                input.seek(offset)
+                val requested = minOf(buffer.size.toLong(), file.length() - offset).toInt()
+                val read = input.read(buffer, 0, requested)
+                if (read <= 0) return NetworkResult.Error("خواندن تصویر برای ادامه بارگذاری ممکن نشد.")
+                val body = buffer.copyOf(read).toRequestBody("application/octet-stream".toMediaType())
+                val part = apiService.uploadChunk(upload.uploadId, offset, bytes = body)
+                val state = part.body()?.data?.upload
+                if (!part.isSuccessful || state == null) {
+                    if (part.code() == 409) {
+                        val status = apiService.getUploadStatus(upload.uploadId).body()?.data?.upload
+                        if (status != null && status.offset >= 0) {
+                            offset = status.offset
+                            continue
+                        }
+                    }
+                    return NetworkResult.Error("ادامه بارگذاری تصویر انجام نشد.", part.code())
+                }
+                offset = state.offset
+                onProgress((offset.toFloat() / file.length().coerceAtLeast(1L)).coerceIn(0f, 1f))
+            }
+        }
+
+        val complete = apiService.completeUpload(upload.uploadId)
+        if (!complete.isSuccessful || complete.body()?.data?.upload == null) {
+            return NetworkResult.Error("نهایی‌سازی تصویر روی سرور انجام نشد.", complete.code())
+        }
+        onProgress(1f)
+        return NetworkResult.Success(Unit)
     }
 
     override suspend fun updateProperty(
         id: Long,
         draft: PropertyDraft,
-        baseVersion: Int
+        baseVersion: String
     ): NetworkResult<Property> = withContext(Dispatchers.IO) {
+        if (baseVersion.isBlank()) {
+            return@withContext NetworkResult.Error("نسخه سرور پرونده مشخص نیست؛ ابتدا پرونده را تازه‌سازی کنید.", 428)
+        }
         try {
-            val request = CreatePropertyRequest(
-                idempotencyKey = draft.idempotencyKey,
-                baseVersion = baseVersion,
-                title = draft.title,
-                transactionType = draft.transactionType,
-                propertyType = draft.propertyType,
-                price = draft.price,
-                mortgagePrice = draft.mortgagePrice,
-                area = draft.area,
-                rooms = draft.rooms,
-                floor = draft.floor,
-                totalFloors = draft.totalFloors,
-                yearBuilt = draft.yearBuilt,
-                ownerName = draft.ownerName,
-                ownerPhone = draft.ownerPhone,
-                ownerNotes = draft.ownerNotes,
-                city = draft.city,
-                neighborhood = draft.neighborhood,
-                address = draft.address,
-                latitude = draft.latitude,
-                longitude = draft.longitude,
-                features = draft.features,
-                description = draft.description
+            val response = apiService.updateCase(
+                id,
+                UpdateCaseRequest(baseVersion = baseVersion, payload = draft.toCasePayload())
             )
-            val response = apiService.updateProperty(
-                id = id,
-                baseVersion = baseVersion.toString(),
-                request = request
-            )
-            if (response.isSuccessful && response.body()?.data != null) {
-                val updated = response.body()!!.data!!
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                val updated = data.caseItem.copy(
+                    version = data.serverVersion?.takeIf { it.isNotBlank() } ?: data.caseItem.version
+                ).toDomain()
                 propertyDao.insertProperties(listOf(updated.toEntity()))
-                NetworkResult.Success(updated.toDomain())
+                NetworkResult.Success(updated)
             } else if (response.code() == 409) {
-                NetworkResult.Error("تعارض داده: ملک توسط کاربر دیگری بروزرسانی شده است.", 409)
+                NetworkResult.Error("پرونده توسط همکار دیگری تغییر کرده است. نسخه جدید را دریافت و دوباره ویرایش کنید.", 409)
             } else {
-                NetworkResult.Error("خطا در بروزرسانی ملک: ${response.message()}", response.code())
+                NetworkResult.Error("ویرایش پرونده روی سرور انجام نشد.", response.code())
             }
         } catch (e: Exception) {
-            NetworkResult.Error("خطای ارتباط با سرور", cause = e)
+            NetworkResult.Error("ویرایش پرونده نیاز به اتصال آنلاین دارد.", cause = e)
         }
     }
 
-    override fun observeCachedProperties(): Flow<List<Property>> {
-        return propertyDao.getAllPropertiesFlow().map { list -> list.map { it.toDomain() } }
-    }
+    override fun observeCachedProperties(): Flow<List<Property>> =
+        propertyDao.getAllPropertiesFlow().map { list -> list.map { it.toDomain() } }
 
-    override fun searchCachedProperties(query: String): Flow<List<Property>> {
-        return propertyDao.searchProperties(query).map { list -> list.map { it.toDomain() } }
-    }
+    override fun searchCachedProperties(query: String): Flow<List<Property>> =
+        propertyDao.searchProperties(query).map { list -> list.map { it.toDomain() } }
 
     override suspend fun saveDraft(draft: PropertyDraft) = withContext(Dispatchers.IO) {
         encryptedDraftStorage.saveDraft(draft)
@@ -301,247 +270,136 @@ class PropertyRepositoryImpl(
         encryptedDraftStorage.deleteDraft(idempotencyKey)
     }
 
+    private fun PropertyDraft.toCasePayload(): CasePayloadRequest {
+        val tx = normalizeTransaction(transactionType) ?: "sale"
+        val type = normalizePropertyType(propertyType)
+        val isRental = tx == "rent" || tx == "mortgage_rent"
+        return CasePayloadRequest(
+            title = title.trim(),
+            transactionType = tx,
+            propertyType = type,
+            priceDisplayMode = "numeric",
+            price = if (!isRental) price.takeIf { it > 0 } else null,
+            depositAmount = if (isRental) mortgagePrice.takeIf { it > 0 } else null,
+            rentAmount = if (isRental) price.takeIf { it > 0 } else null,
+            area = area.takeIf { it > 0 },
+            bedrooms = rooms.takeIf { it > 0 },
+            buildYear = yearBuilt.takeIf { it > 0 },
+            floorNo = floor,
+            totalFloors = totalFloors.takeIf { it > 0 },
+            ownerName = ownerName.trim(),
+            ownerMobile = ownerPhone.trim(),
+            cityName = city.trim(),
+            neighborhoodName = neighborhood.trim(),
+            exactAddress = address.trim().takeIf { it.isNotEmpty() },
+            exactLat = latitude.takeIf { it != 0.0 },
+            exactLng = longitude.takeIf { it != 0.0 },
+            publicDescription = description.trim().takeIf { it.isNotEmpty() },
+            internalSummary = ownerNotes.trim().takeIf { it.isNotEmpty() }
+        )
+    }
+
+    private fun normalizeTransaction(value: String?): String? = when (value) {
+        "mortgage" -> "mortgage_rent"
+        null, "" -> null
+        else -> value
+    }
+
+    private fun normalizePropertyType(value: String): String = when (value) {
+        "store" -> "commercial"
+        else -> value
+    }
+
+    private fun CaseDto.toDomain(): Property = Property(
+        id = id,
+        code = caseCode,
+        title = property.title,
+        transactionType = transactionType,
+        propertyType = property.type,
+        status = status,
+        branchId = branchId,
+        branchName = branchName,
+        consultantName = if (assignedAgentUserId > 0) "کاربر #$assignedAgentUserId" else "",
+        price = 0,
+        mortgagePrice = 0,
+        area = property.area,
+        rooms = property.bedrooms,
+        city = "",
+        neighborhood = location.neighborhood.ifBlank { location.district },
+        baseVersion = version,
+        updatedAt = updatedAt
+    )
+
+    private fun Property.toEntity(): PropertyEntity = PropertyEntity(
+        id = id,
+        code = code,
+        title = title,
+        transactionType = transactionType,
+        propertyType = propertyType,
+        status = status,
+        branchId = branchId,
+        branchName = branchName,
+        consultantName = consultantName,
+        price = price,
+        mortgagePrice = mortgagePrice,
+        area = area,
+        rooms = rooms,
+        floor = floor,
+        totalFloors = totalFloors,
+        yearBuilt = yearBuilt,
+        city = city,
+        neighborhood = neighborhood,
+        thumbnail = thumbnail,
+        baseVersion = baseVersion
+    )
+
+    private fun PropertyEntity.toDomain(): Property = Property(
+        id = id,
+        code = code,
+        title = title,
+        transactionType = transactionType,
+        propertyType = propertyType,
+        status = status,
+        branchId = branchId,
+        branchName = branchName,
+        consultantName = consultantName,
+        price = price,
+        mortgagePrice = mortgagePrice,
+        area = area,
+        rooms = rooms,
+        floor = floor,
+        totalFloors = totalFloors,
+        yearBuilt = yearBuilt,
+        city = city,
+        neighborhood = neighborhood,
+        thumbnail = thumbnail,
+        baseVersion = baseVersion
+    )
+
     private fun compressImageFile(file: File): File {
-        val originalBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return file
-        val maxDimension = 1280
-        val scale = if (originalBitmap.width > maxDimension || originalBitmap.height > maxDimension) {
-            val ratio = originalBitmap.width.toFloat() / originalBitmap.height.toFloat()
-            if (ratio > 1) {
-                Bitmap.createScaledBitmap(originalBitmap, maxDimension, (maxDimension / ratio).toInt(), true)
-            } else {
-                Bitmap.createScaledBitmap(originalBitmap, (maxDimension * ratio).toInt(), maxDimension, true)
-            }
-        } else {
-            originalBitmap
-        }
-
-        val outDir = File(context.cacheDir, "compressed_images").apply { if (!exists()) mkdirs() }
-        val compressedFile = File(outDir, "cmp_${System.currentTimeMillis()}_${file.name}")
-        FileOutputStream(compressedFile).use { out ->
-            scale.compress(Bitmap.CompressFormat.JPEG, 80, out)
-        }
-        return compressedFile
-    }
-
-    private fun PropertyDto.toDomain(): Property {
-        return Property(
-            id = this.id,
-            code = this.code,
-            title = this.title,
-            transactionType = this.transactionType,
-            propertyType = this.propertyType,
-            status = this.status,
-            branchId = this.branchId,
-            branchName = this.branchName,
-            consultantName = this.consultantName,
-            price = this.price,
-            mortgagePrice = this.mortgagePrice,
-            area = this.area,
-            rooms = this.rooms,
-            floor = this.floor,
-            totalFloors = this.totalFloors,
-            yearBuilt = this.yearBuilt,
-            city = this.city,
-            neighborhood = this.neighborhood,
-            address = this.address,
-            latitude = this.latitude,
-            longitude = this.longitude,
-            thumbnail = this.thumbnail,
-            images = this.images,
-            features = this.features,
-            baseVersion = this.baseVersion,
-            createdAt = this.createdAt,
-            updatedAt = this.updatedAt
-        )
-    }
-
-    private fun PropertyDto.toEntity(): PropertyEntity {
-        return PropertyEntity(
-            id = this.id,
-            code = this.code,
-            title = this.title,
-            transactionType = this.transactionType,
-            propertyType = this.propertyType,
-            status = this.status,
-            branchId = this.branchId,
-            branchName = this.branchName,
-            consultantName = this.consultantName,
-            price = this.price,
-            mortgagePrice = this.mortgagePrice,
-            area = this.area,
-            rooms = this.rooms,
-            floor = this.floor,
-            totalFloors = this.totalFloors,
-            yearBuilt = this.yearBuilt,
-            city = this.city,
-            neighborhood = this.neighborhood,
-            thumbnail = this.thumbnail,
-            baseVersion = this.baseVersion
-        )
-    }
-
-    private fun PropertyEntity.toDomain(): Property {
-        return Property(
-            id = this.id,
-            code = this.code,
-            title = this.title,
-            transactionType = this.transactionType,
-            propertyType = this.propertyType,
-            status = this.status,
-            branchId = this.branchId,
-            branchName = this.branchName,
-            consultantName = this.consultantName,
-            price = this.price,
-            mortgagePrice = this.mortgagePrice,
-            area = this.area,
-            rooms = this.rooms,
-            floor = this.floor,
-            totalFloors = this.totalFloors,
-            yearBuilt = this.yearBuilt,
-            city = this.city,
-            neighborhood = this.neighborhood,
-            thumbnail = this.thumbnail,
-            baseVersion = this.baseVersion
-        )
-    }
-
-    private fun Property.toEntity(): PropertyEntity {
-        return PropertyEntity(
-            id = this.id,
-            code = this.code,
-            title = this.title,
-            transactionType = this.transactionType,
-            propertyType = this.propertyType,
-            status = this.status,
-            branchId = this.branchId,
-            branchName = this.branchName,
-            consultantName = this.consultantName,
-            price = this.price,
-            mortgagePrice = this.mortgagePrice,
-            area = this.area,
-            rooms = this.rooms,
-            floor = this.floor,
-            totalFloors = this.totalFloors,
-            yearBuilt = this.yearBuilt,
-            city = this.city,
-            neighborhood = this.neighborhood,
-            thumbnail = this.thumbnail,
-            baseVersion = this.baseVersion
-        )
-    }
-
-    private fun getAshianMelkInitialEntities(): List<PropertyEntity> {
-        return listOf(
-            PropertyEntity(
-                id = 101L,
-                code = "AM-8421",
-                title = "آپارتمان نوساز سوپرلوکس زعفرانیه",
-                transactionType = "sale",
-                propertyType = "apartment",
-                status = "active",
-                branchId = 1L,
-                branchName = "شعبه شمیرانات",
-                consultantName = "علیرضا رضایی",
-                price = 38_500_000_000L,
-                mortgagePrice = 0L,
-                area = 240.0,
-                rooms = 3,
-                floor = 5,
-                totalFloors = 7,
-                yearBuilt = 1402,
-                city = "تهران",
-                neighborhood = "زعفرانیه",
-                thumbnail = "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=600&auto=format&fit=crop&q=80",
-                baseVersion = 1
-            ),
-            PropertyEntity(
-                id = 102L,
-                code = "AM-7319",
-                title = "پنت‌هاوس مدرن با دید کامل شهر سعادت‌آباد",
-                transactionType = "sale",
-                propertyType = "apartment",
-                status = "active",
-                branchId = 2L,
-                branchName = "شعبه غرب تهران",
-                consultantName = "سارا مهدوی",
-                price = 45_000_000_000L,
-                mortgagePrice = 0L,
-                area = 310.0,
-                rooms = 4,
-                floor = 12,
-                totalFloors = 12,
-                yearBuilt = 1401,
-                city = "تهران",
-                neighborhood = "سعادت‌آباد",
-                thumbnail = "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&auto=format&fit=crop&q=80",
-                baseVersion = 1
-            ),
-            PropertyEntity(
-                id = 103L,
-                code = "AM-9104",
-                title = "رهن و اجاره آپارتمان تک‌واحدی نیاوران",
-                transactionType = "rent",
-                propertyType = "apartment",
-                status = "active",
-                branchId = 1L,
-                branchName = "شعبه شمیرانات",
-                consultantName = "مهدی حسینی",
-                price = 85_000_000L, // Monthly rent
-                mortgagePrice = 2_500_000_000L, // Mortgage
-                area = 175.0,
-                rooms = 3,
-                floor = 3,
-                totalFloors = 5,
-                yearBuilt = 1399,
-                city = "تهران",
-                neighborhood = "نیاوران",
-                thumbnail = "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&auto=format&fit=crop&q=80",
-                baseVersion = 2
-            ),
-            PropertyEntity(
-                id = 104L,
-                code = "AM-6542",
-                title = "ویلای دوبلکس مدرن شهرک غرب با استخر",
-                transactionType = "sale",
-                propertyType = "villa",
-                status = "active",
-                branchId = 2L,
-                branchName = "شعبه غرب تهران",
-                consultantName = "علیرضا رضایی",
-                price = 92_000_000_000L,
-                mortgagePrice = 0L,
-                area = 600.0,
-                rooms = 5,
-                floor = 1,
-                totalFloors = 2,
-                yearBuilt = 1398,
-                city = "تهران",
-                neighborhood = "شهرک غرب",
-                thumbnail = "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=600&auto=format&fit=crop&q=80",
-                baseVersion = 1
-            ),
-            PropertyEntity(
-                id = 105L,
-                code = "AM-5021",
-                title = "واحد اداری بر اصلی میرداماد مناسب شرکت‌های برند",
-                transactionType = "rent",
-                propertyType = "office",
-                status = "active",
-                branchId = 3L,
-                branchName = "شعبه مرکز",
-                consultantName = "نیلوفر کریمی",
-                price = 120_000_000L,
-                mortgagePrice = 1_800_000_000L,
-                area = 140.0,
-                rooms = 4,
-                floor = 4,
-                totalFloors = 6,
-                yearBuilt = 1397,
-                city = "تهران",
-                neighborhood = "میرداماد",
-                thumbnail = "https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&auto=format&fit=crop&q=80",
-                baseVersion = 1
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            ?: throw IllegalArgumentException("تصویر قابل خواندن نیست.")
+        val maxDimension = 1600
+        val largest = maxOf(bitmap.width, bitmap.height)
+        val scaled = if (largest > maxDimension) {
+            val ratio = maxDimension.toFloat() / largest.toFloat()
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                true
             )
-        )
+        } else bitmap
+
+        val outDir = File(context.cacheDir, "compressed_images").apply { mkdirs() }
+        val output = File(outDir, "mobile_${System.nanoTime()}.jpg")
+        FileOutputStream(output).use {
+            if (!scaled.compress(Bitmap.CompressFormat.JPEG, 82, it)) {
+                throw IllegalStateException("فشرده‌سازی تصویر انجام نشد.")
+            }
+        }
+        if (scaled !== bitmap) scaled.recycle()
+        bitmap.recycle()
+        return output
     }
 }
