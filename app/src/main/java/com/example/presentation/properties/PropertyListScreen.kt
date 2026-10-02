@@ -37,6 +37,7 @@ import com.example.ui.theme.*
 @Composable
 fun PropertyListScreen(
     viewModel: PropertyListViewModel,
+    canCreateProperty: Boolean,
     onPropertyClick: (Long) -> Unit,
     onCreatePropertyClick: () -> Unit
 ) {
@@ -68,14 +69,16 @@ fun PropertyListScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onCreatePropertyClick,
-                modifier = Modifier.testTag("fab_add_property"),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("ثبت ملک جدید", fontWeight = FontWeight.Bold) }
-            )
+            if (canCreateProperty) {
+                ExtendedFloatingActionButton(
+                    onClick = onCreatePropertyClick,
+                    modifier = Modifier.testTag("fab_add_property"),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("ثبت ملک جدید", fontWeight = FontWeight.Bold) }
+                )
+            }
         }
     ) { paddingValues ->
         Column(
