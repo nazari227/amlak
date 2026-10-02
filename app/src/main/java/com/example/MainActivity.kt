@@ -295,7 +295,7 @@ fun AshianMelkMainApp() {
                     viewModel = profileViewModel,
                     onLogoutDone = {
                         navController.navigate(Screen.Login.route) {
-                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                            popUpTo(Screen.Home.route) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
