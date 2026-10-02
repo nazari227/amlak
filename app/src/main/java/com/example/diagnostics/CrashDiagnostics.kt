@@ -19,6 +19,8 @@ class CrashDiagnostics(private val context: Context) {
         private const val KEY_MESSAGE = "last_crash_message"
         private const val KEY_STACK = "last_crash_stack"
         private const val KEY_TIME = "last_crash_time"
+        private const val KEY_AUTH_STAGE = "auth_stage"
+        private const val KEY_AUTH_IN_PROGRESS = "auth_in_progress"
     }
 
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -44,6 +46,28 @@ class CrashDiagnostics(private val context: Context) {
             message = message,
             stack = stack,
             timestamp = timestamp
+        )
+    }
+
+    fun markAuthStage(stage: String, inProgress: Boolean = true) {
+        prefs.edit()
+            .putString(KEY_AUTH_STAGE, stage.take(160))
+            .putBoolean(KEY_AUTH_IN_PROGRESS, inProgress)
+            .apply()
+    }
+
+    fun finishAuthStage(stage: String) {
+        markAuthStage(stage, false)
+    }
+
+    fun interruptedAuthSnapshot(): CrashSnapshot? {
+        if (!prefs.getBoolean(KEY_AUTH_IN_PROGRESS, false)) return null
+        val stage = prefs.getString(KEY_AUTH_STAGE, "unknown").orEmpty()
+        return CrashSnapshot(
+            code = "AUTH-${fingerprint(stage)}",
+            message = "فرآیند ورود در مرحله «$stage» به‌صورت غیرمنتظره متوقف شده است.",
+            stack = "Auth stage: $stage\nNo uncaught Java/Kotlin exception was captured.",
+            timestamp = System.currentTimeMillis()
         )
     }
 
