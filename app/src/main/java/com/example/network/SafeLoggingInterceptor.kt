@@ -1,6 +1,7 @@
 package com.example.network
 
 import android.util.Log
+import com.example.BuildConfig
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -12,26 +13,21 @@ class SafeLoggingInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val url = request.url.toString()
+        if (!BuildConfig.DEBUG) return chain.proceed(request)
+
         val method = request.method
-
-        // Safe log - never print raw headers that might contain tokens or request bodies with passwords
-        val hasAuth = request.header("Authorization") != null
-        val deviceId = request.header("X-Device-Id")?.take(6) ?: "none"
-        Log.d(TAG, "--> $method $url [Auth: $hasAuth, DevId: $deviceId...]")
-
+        val path = request.url.encodedPath
         val startNs = System.nanoTime()
-        val response: Response
-        try {
-            response = chain.proceed(request)
+
+        Log.d(TAG, "--> $method $path")
+        return try {
+            val response = chain.proceed(request)
+            val tookMs = (System.nanoTime() - startNs) / 1_000_000
+            Log.d(TAG, "<-- ${response.code} $method $path (${tookMs}ms)")
+            response
         } catch (e: Exception) {
-            Log.e(TAG, "<-- $method $url FAILED: ${e.message}")
+            Log.e(TAG, "<-- FAILED $method $path [${e.javaClass.simpleName}]")
             throw e
         }
-
-        val tookMs = (System.nanoTime() - startNs) / 1e6
-        Log.d(TAG, "<-- ${response.code} ${response.message} $url (${tookMs}ms)")
-
-        return response
     }
 }
