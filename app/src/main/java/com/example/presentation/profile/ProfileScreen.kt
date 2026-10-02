@@ -24,6 +24,7 @@ import com.example.core.util.PersianUtils
 import com.example.domain.model.DeviceSession
 import com.example.presentation.components.AshianMelkTopBar
 import com.example.security.SecurityUtils
+import com.example.security.AppAccessPolicy
 import com.example.ui.theme.*
 
 @Composable
@@ -34,6 +35,9 @@ fun ProfileScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutAllDialog by remember { mutableStateOf(false) }
+    val access = remember(state.userProfile) {
+        state.userProfile?.let { AppAccessPolicy.forUser(it) }
+    }
 
     LaunchedEffect(state.isLoggedOut) {
         if (state.isLoggedOut) {
@@ -101,7 +105,10 @@ fun ProfileScreen(
                         )
 
                         Text(
-                            text = "${state.userProfile?.branchName} • مشاور رسمی",
+                            text = listOfNotNull(
+                                state.userProfile?.branchName?.takeIf { it.isNotBlank() },
+                                access?.roleLabel
+                            ).joinToString(" • ").ifBlank { "همکار داخلی" },
                             style = MaterialTheme.typography.bodySmall,
                             color = NeutralMedium
                         )
