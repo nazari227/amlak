@@ -55,7 +55,7 @@ fun ProfileScreen(
         topBar = {
             AshianMelkTopBar(
                 title = "پروفایل و تنظیمات امنیتی",
-                subtitle = state.userProfile?.branchName ?: "شعبه مرکزی"
+                subtitle = state.userProfile?.branchName.orEmpty().ifBlank { access?.roleLabel ?: "حساب سازمانی" }
             )
         }
     ) { paddingValues ->
