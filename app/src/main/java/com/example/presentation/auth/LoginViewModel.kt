@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 data class LoginUiState(
     val isLoading: Boolean = false,
     val isMfaRequired: Boolean = false,
-    val mfaToken: String? = null,
     val isLoggedIn: Boolean = false,
     val userProfile: UserProfile? = null,
     val errorMessage: String? = null
@@ -27,73 +26,79 @@ class LoginViewModel(
     private val _uiState = MutableStateFlow(LoginUiState(isLoggedIn = authRepository.isLoggedIn()))
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    private var pendingLogin: String = ""
+    private var pendingPassword: String = ""
+
     fun login(username: String, password: String) {
         if (username.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(errorMessage = "لطفاً نام کاربری و رمز عبور را وارد کنید.")
             return
         }
-
+        pendingLogin = username.trim()
+        pendingPassword = password
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val result = authRepository.login(username, password)
-            when (result) {
-                is NetworkResult.Success -> {
-                    when (val data = result.data) {
-                        is LoginResult.Success -> {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                isLoggedIn = true,
-                                userProfile = data.profile,
-                                errorMessage = null
-                            )
-                        }
-                        is LoginResult.MfaRequired -> {
-                            _uiState.value = _uiState.value.copy(
-                                isLoading = false,
-                                isMfaRequired = true,
-                                mfaToken = data.mfaToken,
-                                errorMessage = null
-                            )
-                        }
-                    }
-                }
-                is NetworkResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
+            when (val result = authRepository.login(pendingLogin, pendingPassword)) {
+                is NetworkResult.Success -> when (val data = result.data) {
+                    is LoginResult.Success -> completeLogin(data.profile)
+                    LoginResult.MfaRequired -> _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = result.message
+                        isMfaRequired = true,
+                        errorMessage = null
                     )
                 }
-                is NetworkResult.Loading -> {}
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = result.message
+                )
+                is NetworkResult.Loading -> Unit
             }
         }
     }
 
     fun verifyMfa(code: String) {
-        val token = _uiState.value.mfaToken ?: return
+        if (pendingLogin.isBlank() || pendingPassword.isBlank()) {
+            resetState()
+            return
+        }
+        if (code.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "کد احراز هویت را وارد کنید.")
+            return
+        }
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            val result = authRepository.verifyMfa(token, code)
-            when (result) {
-                is NetworkResult.Success -> {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isLoggedIn = true,
-                        userProfile = result.data,
-                        errorMessage = null
-                    )
-                }
-                is NetworkResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = result.message
-                    )
-                }
-                is NetworkResult.Loading -> {}
+            when (val result = authRepository.verifyMfa(pendingLogin, pendingPassword, code.trim())) {
+                is NetworkResult.Success -> completeLogin(result.data)
+                is NetworkResult.Error -> _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = result.message
+                )
+                is NetworkResult.Loading -> Unit
             }
         }
     }
 
+    private fun completeLogin(profile: UserProfile) {
+        pendingPassword = ""
+        pendingLogin = ""
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            isMfaRequired = false,
+            isLoggedIn = true,
+            userProfile = profile,
+            errorMessage = null
+        )
+    }
+
     fun resetState() {
+        pendingPassword = ""
+        pendingLogin = ""
         _uiState.value = LoginUiState(isLoggedIn = authRepository.isLoggedIn())
+    }
+
+    override fun onCleared() {
+        pendingPassword = ""
+        pendingLogin = ""
+        super.onCleared()
     }
 }
