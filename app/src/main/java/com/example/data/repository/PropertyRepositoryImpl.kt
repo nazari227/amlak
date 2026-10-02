@@ -310,25 +310,37 @@ class PropertyRepositoryImpl(
         else -> value
     }
 
-    private fun CaseDto.toDomain(): Property = Property(
-        id = id,
-        code = caseCode,
-        title = property.title,
-        transactionType = transactionType,
-        propertyType = property.type,
-        status = status,
-        branchId = branchId,
-        branchName = branchName,
-        consultantName = if (assignedAgentUserId > 0) "کاربر #$assignedAgentUserId" else "",
-        price = 0,
-        mortgagePrice = 0,
-        area = property.area,
-        rooms = property.bedrooms,
-        city = "",
-        neighborhood = location.neighborhood.ifBlank { location.district },
-        baseVersion = version,
-        updatedAt = updatedAt
-    )
+    private fun CaseDto.toDomain(): Property {
+        val isRental = transactionType == "rent" || transactionType == "mortgage_rent"
+        val primaryPrice = if (isRental) pricing.rentAmount else pricing.amount
+        return Property(
+            id = id,
+            code = caseCode,
+            title = property.title,
+            transactionType = transactionType,
+            propertyType = property.type,
+            status = status,
+            branchId = branchId,
+            branchName = branchName,
+            consultantName = if (assignedAgentUserId > 0) "کاربر #$assignedAgentUserId" else "",
+            price = (primaryPrice ?: 0.0).toLong(),
+            mortgagePrice = (pricing.depositAmount ?: 0.0).toLong(),
+            area = property.area,
+            rooms = property.bedrooms,
+            floor = property.floorNo,
+            totalFloors = property.totalFloors,
+            yearBuilt = property.buildYear,
+            city = location.city,
+            neighborhood = location.neighborhood.ifBlank { location.district },
+            address = location.address.ifBlank { null },
+            latitude = location.lat,
+            longitude = location.lng,
+            thumbnail = media.thumbnailUrl.ifBlank { null },
+            images = media.images,
+            baseVersion = version,
+            updatedAt = updatedAt
+        )
+    }
 
     private fun Property.toEntity(): PropertyEntity = PropertyEntity(
         id = id,
