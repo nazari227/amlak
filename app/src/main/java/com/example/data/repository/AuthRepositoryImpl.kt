@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.os.Build
 import com.example.core.network.NetworkResult
+import com.example.diagnostics.CrashDiagnostics
 import com.example.data.model.LoginRequest
 import com.example.data.model.UserDto
 import com.example.domain.model.DeviceSession
@@ -15,7 +16,8 @@ import kotlinx.coroutines.withContext
 
 class AuthRepositoryImpl(
     private val apiService: AshianMelkApiService,
-    private val tokenStorage: EncryptedTokenStorage
+    private val tokenStorage: EncryptedTokenStorage,
+    private val crashDiagnostics: CrashDiagnostics
 ) : AuthRepository {
 
     override suspend fun login(login: String, password: String): NetworkResult<LoginResult> =
@@ -34,6 +36,7 @@ class AuthRepositoryImpl(
 
     private suspend fun authenticate(login: String, password: String, mfaCode: String): NetworkResult<LoginResult> =
         withContext(Dispatchers.IO) {
+            crashDiagnostics.markAuthStage(if (mfaCode.isBlank()) "sending_password_login" else "sending_mfa_login")
             try {
                 val response = apiService.login(
                     LoginRequest(
@@ -46,12 +49,18 @@ class AuthRepositoryImpl(
                     )
                 )
 
+                crashDiagnostics.markAuthStage("login_http_${response.code()}")
                 if (response.isSuccessful) {
                     val tokens = response.body()?.data
                         ?: return@withContext NetworkResult.Error("پاسخ ورود از سرور ناقص است.", response.code())
+                    crashDiagnostics.markAuthStage("saving_tokens")
                     tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
+                    crashDiagnostics.markAuthStage("fetching_profile")
                     when (val profile = fetchAndStoreProfile()) {
-                        is NetworkResult.Success -> NetworkResult.Success(LoginResult.Success(profile.data))
+                        is NetworkResult.Success -> {
+                            crashDiagnostics.finishAuthStage("login_success_profile_loaded")
+                            NetworkResult.Success(LoginResult.Success(profile.data))
+                        }
                         is NetworkResult.Error -> {
                             tokenStorage.clearAuth()
                             profile
@@ -66,8 +75,10 @@ class AuthRepositoryImpl(
                         raw.contains("api_mfa_invalid")
 
                     if (mfaRequired) {
+                        crashDiagnostics.finishAuthStage("mfa_required_ui")
                         NetworkResult.Success(LoginResult.MfaRequired)
                     } else if (mfaInvalid) {
+                        crashDiagnostics.finishAuthStage("mfa_invalid")
                         NetworkResult.Error(
                             "کد احراز هویت دومرحله‌ای معتبر نیست.",
                             401,
@@ -81,10 +92,12 @@ class AuthRepositoryImpl(
                             429 -> "تعداد تلاش‌های ورود بیش از حد مجاز است. کمی بعد دوباره تلاش کنید."
                             else -> "ورود به سامانه انجام نشد (${response.code()})."
                         }
+                        crashDiagnostics.finishAuthStage("login_error_${response.code()}")
                         NetworkResult.Error(message, response.code(), isUnauthorized = response.code() == 401)
                     }
                 }
             } catch (e: Exception) {
+                crashDiagnostics.finishAuthStage("login_exception_${e.javaClass.simpleName}")
                 NetworkResult.Error("ارتباط امن با سرور برقرار نشد.", cause = e)
             }
         }
