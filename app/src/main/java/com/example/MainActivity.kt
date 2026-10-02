@@ -15,6 +15,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.presentation.auth.LoginScreen
+import com.example.presentation.branding.AshianSplashScreen
 import com.example.presentation.auth.LoginViewModel
 import com.example.presentation.creation.PropertyCreationViewModel
 import com.example.presentation.creation.PropertyCreationWizardScreen
@@ -35,6 +36,7 @@ import com.example.presentation.properties.PropertyDetailScreen
 import com.example.presentation.properties.PropertyListScreen
 import com.example.presentation.properties.PropertyListViewModel
 import com.example.ui.theme.AshianMelkTheme
+import com.example.security.AppAccessPolicy
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -68,12 +70,19 @@ fun AshianMelkMainApp() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val currentUser = app.authRepository.getCurrentUser()
+    val access = remember(currentUser.role, currentUser.capabilities) {
+        AppAccessPolicy.forUser(currentUser)
+    }
 
     // Listen for session revocation (401 refresh fail)
     LaunchedEffect(Unit) {
         app.sessionRevokedEvents.collectLatest {
-            navController.navigate(Screen.Login.route) {
-                popUpTo(0) { inclusive = true }
+            if (navController.currentDestination?.route != Screen.Login.route) {
+                navController.navigate(Screen.Login.route) {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -94,8 +103,8 @@ fun AshianMelkMainApp() {
     val cachedTasks by app.taskRepository.observeCachedTasks().collectAsState(initial = emptyList())
     val todayTasksCount = cachedTasks.count { !it.isCompleted }
 
-    // Start destination: if logged in go to Home, otherwise to Login
-    val startDestination = if (app.authRepository.isLoggedIn()) Screen.Home.route else Screen.Login.route
+    // Always show the branded launch animation; it routes to Home or Login.
+    val startDestination = Screen.Splash.route
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -105,6 +114,7 @@ fun AshianMelkMainApp() {
                     currentRoute = currentRoute,
                     unreadNotificationsCount = unreadNotifications,
                     todayTasksCount = todayTasksCount,
+                    access = access,
                     onNavigate = { screen ->
                         if (currentRoute != screen.route) {
                             navController.navigate(screen.route) {
@@ -125,6 +135,22 @@ fun AshianMelkMainApp() {
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize()
         ) {
+            composable(Screen.Splash.route) {
+                AshianSplashScreen(
+                    onFinished = {
+                        val target = if (app.authRepository.isLoggedIn()) {
+                            Screen.Home.route
+                        } else {
+                            Screen.Login.route
+                        }
+                        navController.navigate(target) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
             // 1. Home / Today Screen
             composable(Screen.Home.route) {
                 val homeViewModel: HomeViewModel = viewModel {
@@ -132,6 +158,7 @@ fun AshianMelkMainApp() {
                 }
                 HomeScreen(
                     viewModel = homeViewModel,
+                    access = access,
                     onNavigateToCreateProperty = { navController.navigate(Screen.PropertyCreate.route) },
                     onNavigateToProperties = { _ -> navController.navigate(Screen.Properties.route) },
                     onNavigateToDemands = { navController.navigate(Screen.Demands.route) },
@@ -153,6 +180,7 @@ fun AshianMelkMainApp() {
                 }
                 PropertyListScreen(
                     viewModel = propertyListViewModel,
+                    canCreateProperty = access.canCreateProperty,
                     onPropertyClick = { id ->
                         navController.navigate(Screen.PropertyDetail.createRoute(id))
                     },
@@ -180,17 +208,21 @@ fun AshianMelkMainApp() {
 
             // 4. Property Creation Wizard Screen (5 Steps, Offline encrypted drafts)
             composable(Screen.PropertyCreate.route) {
-                val creationViewModel: PropertyCreationViewModel = viewModel {
-                    PropertyCreationViewModel(app.propertyRepository)
-                }
-                PropertyCreationWizardScreen(
-                    viewModel = creationViewModel,
-                    onBackClick = { navController.popBackStack() },
-                    onSuccessFinish = { newId ->
-                        navController.popBackStack()
-                        navController.navigate(Screen.PropertyDetail.createRoute(newId))
+                if (access.canCreateProperty) {
+                    val creationViewModel: PropertyCreationViewModel = viewModel {
+                        PropertyCreationViewModel(app.propertyRepository)
                     }
-                )
+                    PropertyCreationWizardScreen(
+                        viewModel = creationViewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onSuccessFinish = { newId ->
+                            navController.popBackStack()
+                            navController.navigate(Screen.PropertyDetail.createRoute(newId))
+                        }
+                    )
+                } else {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                }
             }
 
             // 5. Demands List Screen
@@ -263,7 +295,8 @@ fun AshianMelkMainApp() {
                     viewModel = profileViewModel,
                     onLogoutDone = {
                         navController.navigate(Screen.Login.route) {
-                            popUpTo(0) { inclusive = true }
+                            popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                            launchSingleTop = true
                         }
                     }
                 )
