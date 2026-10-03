@@ -206,7 +206,7 @@ fun PropertyCreationWizardScreen(
                 onStepClick = { viewModel.goToStep(it) }
             )
 
-            HorizontalDivider(color = NeutralBorder)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // Step Content
             LazyColumn(
@@ -391,7 +391,7 @@ fun Step1BasicData(
                 label = { Text("قیمت کل به تومان") },
                 supportingText = {
                     val p = priceStr.toLongOrNull() ?: 0L
-                    if (p > 0) Text(PersianUtils.formatPrice(p), color = RealEstateBlue)
+                    if (p > 0) Text(PersianUtils.formatPrice(p), color = MaterialTheme.colorScheme.primary)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -403,7 +403,7 @@ fun Step1BasicData(
                 label = { Text("ودیعه (تومان)") },
                 supportingText = {
                     val m = mortgageStr.toLongOrNull() ?: 0L
-                    if (m > 0) Text(PersianUtils.formatPrice(m), color = RealEstateBlue)
+                    if (m > 0) Text(PersianUtils.formatPrice(m), color = MaterialTheme.colorScheme.primary)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -415,7 +415,7 @@ fun Step1BasicData(
                 label = { Text("اجاره ماهانه (تومان)") },
                 supportingText = {
                     val p = priceStr.toLongOrNull() ?: 0L
-                    if (p > 0) Text(PersianUtils.formatPrice(p), color = RealEstateBlue)
+                    if (p > 0) Text(PersianUtils.formatPrice(p), color = MaterialTheme.colorScheme.primary)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
@@ -499,12 +499,12 @@ fun Step2OwnerData(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.Security, contentDescription = null, tint = RealEstateBlue, modifier = Modifier.size(24.dp))
+                Icon(Icons.Filled.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "اطلاعات مالک و تماس محرمانه بوده و در پیش‌نویس با کلید سخت‌افزاری Android Keystore رمزنگاری می‌شود.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = RealEstateBlueDark
+                    color = MaterialTheme.colorScheme.primaryDark
                 )
             }
         }
@@ -947,7 +947,7 @@ fun Step5ReviewAndSubmit(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("در حال فشرده‌سازی و ارسال تکه‌ای به سرور...", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
@@ -963,7 +963,7 @@ fun Step5ReviewAndSubmit(
                     Text(
                         text = "پیشرفت: ${PersianUtils.toPersianDigits((state.uploadProgress * 100).toInt())}%",
                         style = MaterialTheme.typography.labelSmall,
-                        color = RealEstateBlue
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -986,17 +986,17 @@ fun Step5ReviewAndSubmit(
                 Text(
                     text = "${draft.city}، ${draft.neighborhood.ifBlank { "نامشخص" }} • ${if (draft.transactionType == "sale") "فروش" else "رهن و اجاره"}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = NeutralMedium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = NeutralBorder)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("قیمت اعلامی:", style = MaterialTheme.typography.bodySmall)
                     Text(
                         text = PersianUtils.formatPrice(draft.price),
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = RealEstateBlue)
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     )
                 }
 
@@ -1034,12 +1034,12 @@ fun Step5ReviewAndSubmit(
                 Text(
                     text = "شناسه یکتایی (Idempotency Key): ${draft.idempotencyKey.take(12)}...",
                     style = MaterialTheme.typography.labelSmall,
-                    color = NeutralMedium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "نسخه همزمانی (base_version): ${draft.baseVersion} • اعتبارسنجی SHA-256 فعال است",
                     style = MaterialTheme.typography.labelSmall,
-                    color = NeutralMedium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
