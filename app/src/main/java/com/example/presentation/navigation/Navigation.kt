@@ -21,6 +21,8 @@ import com.example.security.AppAccess
 sealed class Screen(val route: String) {
     data object Splash : Screen("splash")
     data object CrashDiagnostics : Screen("crash_diagnostics")
+    data object SecuritySetup : Screen("security_setup")
+    data object AppUnlock : Screen("app_unlock")
     data object Home : Screen("home")
     data object Properties : Screen("properties")
     data object Demands : Screen("demands")
