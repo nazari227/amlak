@@ -30,7 +30,9 @@ object AppAccessPolicy {
         val operator = role == "operator"
         val marketer = role == "marketer"
 
-        val showProperties = technical || manager || supervisor || agent || operator || marketer ||
+        // Capabilities are authoritative. Technical admin keeps full access and
+        // marketer preserves the current read-oriented mobile experience.
+        val showProperties = technical || marketer ||
             has(
                 "ia_create_cases",
                 "ia_manage_all_cases",
@@ -38,7 +40,7 @@ object AppAccessPolicy {
                 "ia_manage_assigned_cases"
             )
 
-        val showDemands = technical || manager || supervisor || agent || operator || marketer ||
+        val showDemands = technical || marketer ||
             has(
                 "ia_create_demands",
                 "ia_manage_all_demands",
