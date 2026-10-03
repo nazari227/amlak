@@ -1,11 +1,20 @@
 package com.example.presentation.creation
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,13 +27,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.util.PersianUtils
 import com.example.domain.model.PropertyDraft
+import com.example.presentation.components.OsmMapPreview
 import com.example.ui.theme.*
+import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -540,12 +559,24 @@ fun Step3LocationData(
     var city by remember { mutableStateOf(draft.city) }
     var neighborhood by remember { mutableStateOf(draft.neighborhood) }
     var address by remember { mutableStateOf(draft.address) }
-    val lat by remember { mutableDoubleStateOf(draft.latitude) }
-    val lng by remember { mutableDoubleStateOf(draft.longitude) }
+    var latText by remember(draft.idempotencyKey) {
+        mutableStateOf(draft.latitude.takeIf { it != 0.0 }?.toString().orEmpty())
+    }
+    var lngText by remember(draft.idempotencyKey) {
+        mutableStateOf(draft.longitude.takeIf { it != 0.0 }?.toString().orEmpty())
+    }
+
+    fun latitude(): Double? = latText.trim().replace('،', '.').replace(',', '.').toDoubleOrNull()
+    fun longitude(): Double? = lngText.trim().replace('،', '.').replace(',', '.').toDoubleOrNull()
 
     fun sync() {
-        onUpdate(city, neighborhood, address, lat, lng)
+        onUpdate(city, neighborhood, address, latitude() ?: 0.0, longitude() ?: 0.0)
     }
+
+    val lat = latitude()
+    val lng = longitude()
+    val validCoordinates = lat != null && lng != null &&
+        lat in -90.0..90.0 && lng in -180.0..180.0
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("گام ۳: موقعیت مکانی ملک", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -578,28 +609,65 @@ fun Step3LocationData(
             shape = RoundedCornerShape(12.dp)
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+                value = latText,
+                onValueChange = { latText = it; sync() },
+                label = { Text("عرض جغرافیایی") },
+                placeholder = { Text("مثال: 35.6892") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = lngText,
+                onValueChange = { lngText = it; sync() },
+                label = { Text("طول جغرافیایی") },
+                placeholder = { Text("مثال: 51.3890") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(220.dp),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F5F9))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.Place, contentDescription = null, tint = RealEstateBlue, modifier = Modifier.size(36.dp))
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("مختصات جغرافیایی ملک روی نقشه", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                    Text(
-                        text = "عرض: ${draft.latitude} • طول: ${draft.longitude}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeutralMedium
-                    )
+            if (validCoordinates) {
+                OsmMapPreview(
+                    latitude = lat!!,
+                    longitude = lng!!,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Filled.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "برای نمایش نقشه، مختصات معتبر را وارد کنید.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            "نقشه OpenStreetMap داخل خود اپ نمایش داده می‌شود.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -614,16 +682,88 @@ fun Step4PhotosAndFeatures(
     draft: PropertyDraft,
     onUpdate: (List<String>, String, List<String>) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val allFeatures = listOf(
         "پارکینگ سندی", "آسانسور باربر", "انباری اختصاصی",
         "بالکن رو به آفتاب", "استخر و سونا", "لابی مجلل با لابی‌من",
         "روف‌گاردن", "دوربین مداربسته", "سیستم هوشمند BMS"
     )
-    val selectedFeatures = remember { mutableStateListOf<String>().apply { addAll(draft.features) } }
-    var description by remember { mutableStateOf(draft.description) }
+    val selectedFeatures = remember(draft.idempotencyKey) {
+        mutableStateListOf<String>().apply { addAll(draft.features) }
+    }
+    val imagePaths = remember(draft.idempotencyKey) {
+        mutableStateListOf<String>().apply { addAll(draft.localImagePaths) }
+    }
+    var description by remember(draft.idempotencyKey) { mutableStateOf(draft.description) }
+    var cameraTargetPath by remember { mutableStateOf<String?>(null) }
+    var imageMessage by remember { mutableStateOf<String?>(null) }
 
     fun sync() {
-        onUpdate(selectedFeatures.toList(), description, draft.localImagePaths)
+        onUpdate(selectedFeatures.toList(), description, imagePaths.toList())
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            val room = (10 - imagePaths.size).coerceAtLeast(0)
+            val copied = withContext(Dispatchers.IO) {
+                uris.take(room).mapNotNull { copyImageToDraftCache(context, it) }
+            }
+            if (copied.isNotEmpty()) {
+                imagePaths.addAll(copied)
+                sync()
+                imageMessage = "${copied.size} تصویر از گالری اضافه شد."
+            }
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        val path = cameraTargetPath
+        if (success && path != null && File(path).isFile) {
+            if (imagePaths.size < 10) {
+                imagePaths.add(path)
+                sync()
+                imageMessage = "عکس دوربین اضافه شد."
+            }
+        } else if (path != null) {
+            File(path).delete()
+        }
+        cameraTargetPath = null
+    }
+
+    fun launchCamera() {
+        if (imagePaths.size >= 10) {
+            imageMessage = "حداکثر ۱۰ تصویر برای هر پرونده قابل انتخاب است."
+            return
+        }
+        val file = createDraftCameraFile(context)
+        cameraTargetPath = file.absolutePath
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        cameraLauncher.launch(uri)
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchCamera()
+        else imageMessage = "برای گرفتن عکس جدید، اجازه دوربین لازم است."
+    }
+
+    fun requestCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -633,7 +773,6 @@ fun Step4PhotosAndFeatures(
         Text("امکانات اختصاصی", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Feature chips
         allFeatures.chunked(2).forEach { rowItems ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -657,7 +796,6 @@ fun Step4PhotosAndFeatures(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Photo Upload Box with SHA-256 integrity notice
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -665,16 +803,92 @@ fun Step4PhotosAndFeatures(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, tint = RealEstateBlue)
+                    Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("آپلود تصاویر ملک", fontWeight = FontWeight.Bold)
+                    Text("تصاویر ملک", fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "تصاویر قبل از ارسال به طور خودکار به رزولوشن استاندارد فشرده شده و هش SHA-256 جهت تایید یکپارچگی روی سرور محاسبه می‌شود.",
+                    text = "گالری با Photo Picker امن اندروید باز می‌شود و دسترسی کامل به عکس‌های گوشی نمی‌گیرد. دوربین فقط هنگام گرفتن عکس مجوز می‌خواهد. تصاویر قبل از ارسال فشرده می‌شوند.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = NeutralMedium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        enabled = imagePaths.size < 10,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("انتخاب از گالری")
+                    }
+                    Button(
+                        onClick = { requestCamera() },
+                        enabled = imagePaths.size < 10,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("دوربین")
+                    }
+                }
+
+                if (imageMessage != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        imageMessage!!,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (imagePaths.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "${PersianUtils.toPersianDigits(imagePaths.size)} تصویر انتخاب شده",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(imagePaths.toList()) { path ->
+                            Box(
+                                modifier = Modifier
+                                    .size(92.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                            ) {
+                                AsyncImage(
+                                    model = File(path),
+                                    contentDescription = "تصویر انتخاب‌شده",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                IconButton(
+                                    onClick = {
+                                        imagePaths.remove(path)
+                                        File(path).delete()
+                                        sync()
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(30.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Cancel,
+                                        contentDescription = "حذف تصویر",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -830,4 +1044,29 @@ fun Step5ReviewAndSubmit(
             }
         }
     }
+}
+
+
+private fun copyImageToDraftCache(context: Context, uri: Uri): String? {
+    return try {
+        val dir = File(context.cacheDir, "draft_photos").apply { mkdirs() }
+        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+        val ext = when {
+            "png" in mime -> "png"
+            "webp" in mime -> "webp"
+            else -> "jpg"
+        }
+        val file = File(dir, "gallery_${System.nanoTime()}.${ext}")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        file.takeIf { it.isFile && it.length() > 0 }?.absolutePath
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun createDraftCameraFile(context: Context): File {
+    val dir = File(context.cacheDir, "draft_photos").apply { mkdirs() }
+    return File(dir, "camera_${System.nanoTime()}.jpg")
 }
