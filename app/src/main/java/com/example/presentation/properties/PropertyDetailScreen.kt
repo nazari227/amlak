@@ -33,7 +33,7 @@ import com.example.core.network.NetworkResult
 import com.example.core.util.PersianUtils
 import com.example.domain.model.Property
 import com.example.domain.repository.PropertyRepository
-import com.example.presentation.components.StatusBadge
+import com.example.presentation.components.OsmMapPreview\nimport com.example.presentation.components.StatusBadge
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -162,7 +162,7 @@ fun PropertyDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(260.dp)
-                                    .background(Color(0xFFE2E8F0))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
                             ) {
                                 HorizontalPager(
                                     state = pagerState,
@@ -223,12 +223,12 @@ fun PropertyDetailScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Place, contentDescription = null, tint = NeutralMedium, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.Place, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "${property.city}، ${property.neighborhood} • ${property.branchName}",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = NeutralMedium
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -245,7 +245,7 @@ fun PropertyDetailScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 if (property.transactionType == "sale") {
-                                    Text("قیمت کل اعلامی", style = MaterialTheme.typography.labelMedium, color = NeutralMedium)
+                                    Text("قیمت کل اعلامی", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text(
                                         text = PersianUtils.formatPrice(property.price),
                                         style = MaterialTheme.typography.titleLarge.copy(
@@ -258,7 +258,7 @@ fun PropertyDetailScreen(
                                     Text(
                                         text = "قیمت هر متر مربع: ${PersianUtils.formatPrice(pricePerMeter)}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = NeutralDark
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 } else {
                                     Text(
@@ -329,48 +329,49 @@ fun PropertyDetailScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(140.dp),
+                                    .height(220.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F5F9))
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            imageVector = Icons.Filled.LocationOn,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(36.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        if (property.latitude != null && property.longitude != null) {
-                                            Text(
-                                                text = "مختصات ثبت‌شده: ${property.latitude} , ${property.longitude}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = NeutralMedium
+                                if (property.latitude != null && property.longitude != null) {
+                                    OsmMapPreview(
+                                        latitude = property.latitude,
+                                        longitude = property.longitude,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                imageVector = Icons.Filled.LocationOn,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(36.dp)
                                             )
-                                        } else {
+                                            Spacer(modifier = Modifier.height(6.dp))
                                             Text(
                                                 text = "برای این پرونده موقعیت جغرافیایی ثبت نشده است.",
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = NeutralMedium
-                                            )
-                                        }
-                                        val locationText = property.address?.takeIf { it.isNotBlank() }
-                                            ?: listOf(property.city, property.neighborhood)
-                                                .filter { it.isNotBlank() }
-                                                .joinToString("، ")
-                                        if (locationText.isNotBlank()) {
-                                            Text(
-                                                text = locationText,
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = NeutralDark
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
                                 }
+                            }
+                            val locationText = property.address?.takeIf { it.isNotBlank() }
+                                ?: listOf(property.city, property.neighborhood)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString("، ")
+                            if (locationText.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = locationText,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
@@ -398,7 +399,7 @@ fun SpecBox(modifier: Modifier = Modifier, title: String, value: String, icon: a
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.height(4.dp))
             Text(value, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold))
-            Text(title, style = MaterialTheme.typography.labelSmall, color = NeutralMedium)
+            Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
