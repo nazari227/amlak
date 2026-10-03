@@ -101,7 +101,7 @@ fun PropertyListScreen(
                         .testTag("property_search_input"),
                     placeholder = { Text("جستجو با کد ملک، محله یا عنوان...") },
                     leadingIcon = {
-                        Icon(Icons.Filled.Search, contentDescription = null, tint = NeutralMedium)
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     trailingIcon = {
                         if (state.searchQuery.isNotEmpty()) {
@@ -114,7 +114,7 @@ fun PropertyListScreen(
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = NeutralBorder
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
                     )
                 )
 
@@ -223,7 +223,7 @@ fun PropertyCard(property: Property, onClick: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
-                    .background(Color(0xFFE2E8F0))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 if (!property.thumbnail.isNullOrEmpty()) {
                     AsyncImage(
@@ -240,7 +240,7 @@ fun PropertyCard(property: Property, onClick: () -> Unit) {
                         Icon(
                             imageVector = Icons.Filled.Apartment,
                             contentDescription = null,
-                            tint = Color(0xFF94A3B8),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(48.dp)
                         )
                     }
@@ -284,17 +284,17 @@ fun PropertyCard(property: Property, onClick: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Place, contentDescription = null, tint = NeutralMedium, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Filled.Place, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${property.city}، ${property.neighborhood} • ${property.branchName}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = NeutralMedium
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = NeutralBorder, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Price display
@@ -308,7 +308,7 @@ fun PropertyCard(property: Property, onClick: () -> Unit) {
                             Text(
                                 text = "قیمت کل",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = NeutralMedium
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = PersianUtils.formatPrice(property.price),
@@ -358,19 +358,19 @@ fun PropertyCard(property: Property, onClick: () -> Unit) {
 fun SpecTag(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = Color(0xFFF1F5F9),
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.height(26.dp)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = NeutralMedium, modifier = Modifier.size(14.dp))
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = NeutralDark
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
