@@ -34,12 +34,14 @@ import com.example.domain.model.Demand
 import com.example.domain.model.TaskItem
 import com.example.presentation.components.AshianMelkTopBar
 import com.example.presentation.components.StatusBadge
+import com.example.security.AppAccess
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    access: AppAccess,
     onNavigateToCreateProperty: () -> Unit,
     onNavigateToProperties: (String?) -> Unit,
     onNavigateToDemands: () -> Unit,
@@ -55,7 +57,7 @@ fun HomeScreen(
         topBar = {
             AshianMelkTopBar(
                 title = "سامانه املاک آشیان",
-                subtitle = state.userProfile?.branchName ?: "شعبه مرکزی",
+                subtitle = state.userProfile?.branchName.orEmpty().ifBlank { access.roleLabel },
                 isOnline = state.isOnline,
                 unreadNotificationsCount = state.summary?.unreadNotificationsCount ?: 0,
                 onNotificationClick = onNavigateToNotifications
@@ -81,7 +83,8 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     ConsultantWelcomeCard(
                         consultantName = state.userProfile?.fullName ?: "همکار گرامی",
-                        branchName = state.userProfile?.branchName ?: "شعبه مرکزی"
+                        branchName = (state.userProfile?.branchName ?: "شعبه مرکزی")
+                            .ifBlank { access.roleLabel }
                     )
                 }
 
@@ -91,34 +94,38 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Button(
-                            onClick = onNavigateToCreateProperty,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("quick_add_property_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Filled.AddHome, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("ثبت ملک جدید", fontWeight = FontWeight.Bold)
+                        if (access.canCreateProperty) {
+                            Button(
+                                onClick = onNavigateToCreateProperty,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("quick_add_property_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Filled.AddHome, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("ثبت ملک جدید", fontWeight = FontWeight.Bold)
+                            }
                         }
 
-                        OutlinedButton(
-                            onClick = { onNavigateToProperties(null) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp)
-                                .testTag("quick_search_properties_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("جستجوی فایل‌ها", fontWeight = FontWeight.SemiBold)
+                        if (access.showProperties) {
+                            OutlinedButton(
+                                onClick = { onNavigateToProperties(null) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("quick_search_properties_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("جستجوی فایل‌ها", fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
@@ -135,54 +142,62 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "وظایف امروز",
-                            count = state.summary?.todayTasksCount ?: 0,
-                            icon = Icons.Filled.Checklist,
-                            tint = Color(0xFF0F52BA),
-                            bg = Color(0xFFEFF6FF),
-                            onClick = onNavigateToTasks
-                        )
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "قرارهای بازدید",
-                            count = state.summary?.todayAppointmentsCount ?: 0,
-                            icon = Icons.Filled.Event,
-                            tint = Color(0xFF0D9488),
-                            bg = Color(0xFFF0FDFA),
-                            onClick = onNavigateToTasks
-                        )
+                        if (access.showTasks) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "وظایف امروز",
+                                count = state.summary?.todayTasksCount ?: 0,
+                                icon = Icons.Filled.Checklist,
+                                tint = Color(0xFF0F52BA),
+                                bg = Color(0xFFEFF6FF),
+                                onClick = onNavigateToTasks
+                            )
+                        }
+                        if (access.canManageAppointments) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "قرارهای بازدید",
+                                count = state.summary?.todayAppointmentsCount ?: 0,
+                                icon = Icons.Filled.Event,
+                                tint = Color(0xFF0D9488),
+                                bg = Color(0xFFF0FDFA),
+                                onClick = onNavigateToTasks
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "متقاضیان جدید",
-                            count = state.summary?.newDemandsCount ?: 0,
-                            icon = Icons.Filled.GroupAdd,
-                            tint = Color(0xFFD97706),
-                            bg = Color(0xFFFFFBEB),
-                            onClick = onNavigateToDemands
-                        )
-                        DashboardMetricCard(
-                            modifier = Modifier.weight(1f),
-                            title = "املاک فعال شعبه",
-                            count = state.summary?.activePropertiesCount ?: 0,
-                            icon = Icons.Filled.Apartment,
-                            tint = Color(0xFF7C3AED),
-                            bg = Color(0xFFF5F3FF),
-                            onClick = { onNavigateToProperties(null) }
-                        )
+                        if (access.showDemands) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "متقاضیان جدید",
+                                count = state.summary?.newDemandsCount ?: 0,
+                                icon = Icons.Filled.GroupAdd,
+                                tint = Color(0xFFD97706),
+                                bg = Color(0xFFFFFBEB),
+                                onClick = onNavigateToDemands
+                            )
+                        }
+                        if (access.showProperties) {
+                            DashboardMetricCard(
+                                modifier = Modifier.weight(1f),
+                                title = "املاک فعال شعبه",
+                                count = state.summary?.activePropertiesCount ?: 0,
+                                icon = Icons.Filled.Apartment,
+                                tint = Color(0xFF7C3AED),
+                                bg = Color(0xFFF5F3FF),
+                                onClick = { onNavigateToProperties(null) }
+                            )
+                        }
                     }
                 }
 
                 // 4. Today's Appointments Section
                 val appointments = state.summary?.todayAppointments ?: emptyList()
-                if (appointments.isNotEmpty()) {
+                if (access.canManageAppointments && appointments.isNotEmpty()) {
                     item {
                         SectionHeader(title = "قرارهای بازدید امروز", onMoreClick = onNavigateToTasks)
                     }
@@ -196,7 +211,7 @@ fun HomeScreen(
 
                 // 5. Today's Tasks & Follow-ups
                 val tasks = state.summary?.todayTasks ?: emptyList()
-                if (tasks.isNotEmpty()) {
+                if (access.showTasks && tasks.isNotEmpty()) {
                     item {
                         SectionHeader(title = "وظایف و پیگیری‌های امروز", onMoreClick = onNavigateToTasks)
                     }
@@ -211,7 +226,7 @@ fun HomeScreen(
 
                 // 6. New Assigned Demands
                 val demands = state.summary?.recentDemands ?: emptyList()
-                if (demands.isNotEmpty()) {
+                if (access.showDemands && demands.isNotEmpty()) {
                     item {
                         SectionHeader(title = "متقاضیان جدید ارجاع شده", onMoreClick = onNavigateToDemands)
                     }

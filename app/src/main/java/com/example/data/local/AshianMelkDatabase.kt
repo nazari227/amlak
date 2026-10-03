@@ -20,32 +20,28 @@ import com.example.data.local.entity.TaskEntity
         TaskEntity::class,
         NotificationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AshianMelkDatabase : RoomDatabase() {
-
     abstract fun propertyDao(): PropertyDao
     abstract fun demandDao(): DemandDao
     abstract fun taskDao(): TaskDao
     abstract fun notificationDao(): NotificationDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: AshianMelkDatabase? = null
+        @Volatile private var INSTANCE: AshianMelkDatabase? = null
 
-        fun getInstance(context: Context): AshianMelkDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+        fun getInstance(context: Context): AshianMelkDatabase =
+            INSTANCE ?: synchronized(this) {
+                Room.databaseBuilder(
                     context.applicationContext,
                     AshianMelkDatabase::class.java,
                     "ashian_melk_cache.db"
                 )
                     .fallbackToDestructiveMigration()
                     .build()
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
-        }
     }
 }

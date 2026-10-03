@@ -5,40 +5,41 @@ import okhttp3.Response
 import java.io.IOException
 
 class RateLimitRetryInterceptor(
-    private val maxRetries: Int = 3
+    private val maxRetries: Int = 2
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        val safeToRetry = request.method in setOf("GET", "HEAD", "OPTIONS") ||
+            !request.header("Idempotency-Key").isNullOrBlank()
+
+        if (!safeToRetry) return chain.proceed(request)
+
         var response: Response? = null
         var attempt = 0
-        var delayMs = 1000L
+        var delayMs = 750L
 
-        while (attempt < maxRetries) {
+        while (attempt <= maxRetries) {
             try {
                 response?.close()
                 response = chain.proceed(request)
 
-                if (response.code != 429 && response.code != 503) {
-                    return response
-                }
+                if (response.code != 429 && response.code != 503) return response
+                if (attempt >= maxRetries) return response
 
-                // If rate limited, check Retry-After header
-                val retryAfterHeader = response.header("Retry-After")
-                val sleepDuration = retryAfterHeader?.toLongOrNull()?.let { it * 1000 } ?: delayMs
+                val retryAfterMs = response.header("Retry-After")
+                    ?.toLongOrNull()
+                    ?.coerceIn(0L, 30L)
+                    ?.times(1000L)
 
-                Thread.sleep(sleepDuration)
-                delayMs *= 2
+                Thread.sleep(retryAfterMs ?: delayMs)
+                delayMs = (delayMs * 2).coerceAtMost(4_000L)
                 attempt++
             } catch (e: IOException) {
-                // If network drop occurs on retryable GET requests
-                if (request.method == "GET" && attempt < maxRetries - 1) {
-                    Thread.sleep(delayMs)
-                    delayMs *= 2
-                    attempt++
-                } else {
-                    throw e
-                }
+                if (attempt >= maxRetries) throw e
+                Thread.sleep(delayMs)
+                delayMs = (delayMs * 2).coerceAtMost(4_000L)
+                attempt++
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw IOException("Request retry was interrupted", e)

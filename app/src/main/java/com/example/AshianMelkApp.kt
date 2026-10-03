@@ -2,13 +2,14 @@ package com.example
 
 import android.app.Application
 import com.example.core.network.AndroidNetworkMonitor
+import com.example.diagnostics.CrashDiagnostics
 import com.example.core.network.NetworkMonitor
 import com.example.data.local.AshianMelkDatabase
 import com.example.data.repository.*
 import com.example.domain.repository.*
 import com.example.network.ApiClient
 import com.example.network.AshianMelkApiService
-import com.example.security.EncryptedDraftStorage
+import com.example.security.BiometricLockManager\nimport com.example.security.EncryptedDraftStorage
 import com.example.security.EncryptedTokenStorage
 import com.example.security.KeyStoreManager
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,6 +24,7 @@ class AshianMelkApp : Application() {
     lateinit var database: AshianMelkDatabase private set
     lateinit var apiService: AshianMelkApiService private set
     lateinit var networkMonitor: NetworkMonitor private set
+    lateinit var crashDiagnostics: CrashDiagnostics private set\n    lateinit var biometricLockManager: BiometricLockManager private set
 
     // Repositories
     lateinit var authRepository: AuthRepository private set
@@ -40,11 +42,12 @@ class AshianMelkApp : Application() {
         super.onCreate()
         instance = this
 
+        crashDiagnostics = CrashDiagnostics(this).also { it.install() }
         keyStoreManager = KeyStoreManager()
         tokenStorage = EncryptedTokenStorage(this, keyStoreManager)
         encryptedDraftStorage = EncryptedDraftStorage(this, keyStoreManager)
         database = AshianMelkDatabase.getInstance(this)
-        networkMonitor = AndroidNetworkMonitor(this)
+        networkMonitor = AndroidNetworkMonitor(this)\n        biometricLockManager = BiometricLockManager(this, tokenStorage).also { it.resetTransientLock() }
 
         apiService = ApiClient.createService(
             tokenStorage = tokenStorage,
@@ -53,7 +56,7 @@ class AshianMelkApp : Application() {
             }
         )
 
-        authRepository = AuthRepositoryImpl(apiService, tokenStorage)
+        authRepository = AuthRepositoryImpl(apiService, tokenStorage, crashDiagnostics)
         propertyRepository = PropertyRepositoryImpl(this, apiService, database.propertyDao(), encryptedDraftStorage)
         demandRepository = DemandRepositoryImpl(apiService, database.demandDao())
         taskRepository = TaskRepositoryImpl(apiService, database.taskDao())

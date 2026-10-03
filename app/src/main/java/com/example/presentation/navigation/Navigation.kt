@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -14,8 +16,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.util.PersianUtils
+import com.example.security.AppAccess
 
 sealed class Screen(val route: String) {
+    data object Splash : Screen("splash")
+    data object CrashDiagnostics : Screen("crash_diagnostics")
+    data object SecuritySetup : Screen("security_setup")
+    data object AppUnlock : Screen("app_unlock")
     data object Home : Screen("home")
     data object Properties : Screen("properties")
     data object Demands : Screen("demands")
@@ -48,48 +55,61 @@ fun AshianMelkBottomBar(
     currentRoute: String?,
     unreadNotificationsCount: Int,
     todayTasksCount: Int,
+    access: AppAccess,
     onNavigate: (Screen) -> Unit
 ) {
-    val items = listOf(
-        BottomNavItem(
-            screen = Screen.Home,
-            title = "امروز",
-            selectedIcon = Icons.Filled.Dashboard,
-            unselectedIcon = Icons.Outlined.Dashboard
-        ),
-        BottomNavItem(
-            screen = Screen.Properties,
-            title = "املاک",
-            selectedIcon = Icons.Filled.HomeWork,
-            unselectedIcon = Icons.Outlined.HomeWork
-        ),
-        BottomNavItem(
-            screen = Screen.Demands,
-            title = "متقاضیان",
-            selectedIcon = Icons.Filled.People,
-            unselectedIcon = Icons.Outlined.People
-        ),
-        BottomNavItem(
-            screen = Screen.Tasks,
-            title = "وظایف",
-            selectedIcon = Icons.Filled.Assignment,
-            unselectedIcon = Icons.Outlined.Assignment,
-            badgeCount = todayTasksCount
-        ),
-        BottomNavItem(
-            screen = Screen.Notifications,
-            title = "اعلان‌ها",
-            selectedIcon = Icons.Filled.Notifications,
-            unselectedIcon = Icons.Outlined.Notifications,
-            badgeCount = unreadNotificationsCount
-        ),
-        BottomNavItem(
-            screen = Screen.Profile,
-            title = "بیشتر",
-            selectedIcon = Icons.Filled.Person,
-            unselectedIcon = Icons.Outlined.Person
+    val items = buildList {
+        if (access.showHome) add(
+            BottomNavItem(
+                screen = Screen.Home,
+                title = "امروز",
+                selectedIcon = Icons.Filled.Dashboard,
+                unselectedIcon = Icons.Outlined.Dashboard
+            )
         )
-    )
+        if (access.showProperties) add(
+            BottomNavItem(
+                screen = Screen.Properties,
+                title = "املاک",
+                selectedIcon = Icons.Filled.HomeWork,
+                unselectedIcon = Icons.Outlined.HomeWork
+            )
+        )
+        if (access.showDemands) add(
+            BottomNavItem(
+                screen = Screen.Demands,
+                title = "متقاضیان",
+                selectedIcon = Icons.Filled.People,
+                unselectedIcon = Icons.Outlined.People
+            )
+        )
+        if (access.showTasks) add(
+            BottomNavItem(
+                screen = Screen.Tasks,
+                title = "وظایف",
+                selectedIcon = Icons.AutoMirrored.Filled.Assignment,
+                unselectedIcon = Icons.AutoMirrored.Outlined.Assignment,
+                badgeCount = todayTasksCount
+            )
+        )
+        if (access.showNotifications) add(
+            BottomNavItem(
+                screen = Screen.Notifications,
+                title = "اعلان‌ها",
+                selectedIcon = Icons.Filled.Notifications,
+                unselectedIcon = Icons.Outlined.Notifications,
+                badgeCount = unreadNotificationsCount
+            )
+        )
+        if (access.showProfile) add(
+            BottomNavItem(
+                screen = Screen.Profile,
+                title = "بیشتر",
+                selectedIcon = Icons.Filled.Person,
+                unselectedIcon = Icons.Outlined.Person
+            )
+        )
+    }
 
     NavigationBar(
         modifier = Modifier

@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -8,13 +9,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.presentation.auth.LoginScreen
+import com.example.presentation.branding.AshianSplashScreen
 import com.example.presentation.auth.LoginViewModel
 import com.example.presentation.creation.PropertyCreationViewModel
+import com.example.presentation.diagnostics.CrashDiagnosticsScreen
 import com.example.presentation.creation.PropertyCreationWizardScreen
 import com.example.presentation.demands.DemandDetailScreen
 import com.example.presentation.demands.DemandsScreen
@@ -33,13 +37,30 @@ import com.example.presentation.properties.PropertyDetailScreen
 import com.example.presentation.properties.PropertyListScreen
 import com.example.presentation.properties.PropertyListViewModel
 import com.example.ui.theme.AshianMelkTheme
+import com.example.security.AppAccessPolicy
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    override fun onStop() {
+        super.onStop()
+        AshianMelkApp.instance.biometricLockManager.markLocked()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        lifecycleScope.launch {
+            AshianMelkApp.instance.tokenStorage.screenshotProtection.collectLatest { enabled ->
+                if (enabled) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+            }
+        }
 
         setContent {
             AshianMelkTheme {
@@ -55,12 +76,38 @@ fun AshianMelkMainApp() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val currentUser = app.authRepository.getCurrentUser()
+    val access = remember(currentUser.role, currentUser.capabilities) {
+        AppAccessPolicy.forUser(currentUser)
+    }
+
+    LaunchedEffect(biometricLocked, currentRoute) {
+        val protectedRoutes = setOf(
+            Screen.Splash.route,
+            Screen.Login.route,
+            Screen.CrashDiagnostics.route,
+            Screen.SecuritySetup.route,
+            Screen.AppUnlock.route
+        )
+        if (
+            biometricLocked &&
+            app.biometricLockManager.isEnabledForCurrentUser() &&
+            currentRoute !in protectedRoutes
+        ) {
+            navController.navigate(Screen.AppUnlock.route) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     // Listen for session revocation (401 refresh fail)
     LaunchedEffect(Unit) {
         app.sessionRevokedEvents.collectLatest {
-            navController.navigate(Screen.Login.route) {
-                popUpTo(0) { inclusive = true }
+            if (navController.currentDestination?.route != Screen.Login.route) {
+                navController.navigate(Screen.Login.route) {
+                    popUpTo(Screen.Home.route) { inclusive = true }
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -81,8 +128,8 @@ fun AshianMelkMainApp() {
     val cachedTasks by app.taskRepository.observeCachedTasks().collectAsState(initial = emptyList())
     val todayTasksCount = cachedTasks.count { !it.isCompleted }
 
-    // Start destination: if logged in go to Home, otherwise to Login
-    val startDestination = if (app.authRepository.isLoggedIn()) Screen.Home.route else Screen.Login.route
+    // Always show the branded launch animation; it routes to Home or Login.
+    val startDestination = Screen.Splash.route
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -92,6 +139,7 @@ fun AshianMelkMainApp() {
                     currentRoute = currentRoute,
                     unreadNotificationsCount = unreadNotifications,
                     todayTasksCount = todayTasksCount,
+                    access = access,
                     onNavigate = { screen ->
                         if (currentRoute != screen.route) {
                             navController.navigate(screen.route) {
@@ -112,6 +160,51 @@ fun AshianMelkMainApp() {
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize()
         ) {
+            composable(Screen.Splash.route) {
+                AshianSplashScreen(
+                    onFinished = {
+                        val diagnostic = app.crashDiagnostics.peek()
+                            ?: app.crashDiagnostics.interruptedAuthSnapshot()
+                        val target = when {
+                            diagnostic != null -> Screen.CrashDiagnostics.route
+                            !app.authRepository.isLoggedIn() -> Screen.Login.route
+                            app.biometricLockManager.requiresSetup() -> Screen.SecuritySetup.route
+                            app.biometricLockManager.requiresUnlock() -> Screen.AppUnlock.route
+                            else -> Screen.Home.route
+                        }
+                        navController.navigate(target) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.CrashDiagnostics.route) {
+                val snapshot = app.crashDiagnostics.peek()
+                    ?: app.crashDiagnostics.interruptedAuthSnapshot()
+                if (snapshot != null) {
+                    CrashDiagnosticsScreen(
+                        snapshot = snapshot,
+                        onReturnToLogin = {
+                            app.tokenStorage.clearAuth()
+                            app.crashDiagnostics.clear()
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(Screen.CrashDiagnostics.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                } else {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.CrashDiagnostics.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            }
+
             // 1. Home / Today Screen
             composable(Screen.Home.route) {
                 val homeViewModel: HomeViewModel = viewModel {
@@ -119,6 +212,7 @@ fun AshianMelkMainApp() {
                 }
                 HomeScreen(
                     viewModel = homeViewModel,
+                    access = access,
                     onNavigateToCreateProperty = { navController.navigate(Screen.PropertyCreate.route) },
                     onNavigateToProperties = { _ -> navController.navigate(Screen.Properties.route) },
                     onNavigateToDemands = { navController.navigate(Screen.Demands.route) },
@@ -135,11 +229,16 @@ fun AshianMelkMainApp() {
 
             // 2. Properties List Screen
             composable(Screen.Properties.route) {
+                if (!access.showProperties) {
+                    LaunchedEffect(Unit) { navController.navigate(Screen.Home.route) { launchSingleTop = true } }
+                    return@composable
+                }
                 val propertyListViewModel: PropertyListViewModel = viewModel {
                     PropertyListViewModel(app.propertyRepository, app.networkMonitor)
                 }
                 PropertyListScreen(
                     viewModel = propertyListViewModel,
+                    canCreateProperty = access.canCreateProperty,
                     onPropertyClick = { id ->
                         navController.navigate(Screen.PropertyDetail.createRoute(id))
                     },
@@ -154,6 +253,10 @@ fun AshianMelkMainApp() {
                 route = Screen.PropertyDetail.route,
                 arguments = listOf(navArgument("propertyId") { type = NavType.LongType })
             ) { backStackEntry ->
+                if (!access.showProperties) {
+                    LaunchedEffect(Unit) { navController.navigate(Screen.Home.route) { launchSingleTop = true } }
+                    return@composable
+                }
                 val propertyId = backStackEntry.arguments?.getLong("propertyId") ?: 0L
                 PropertyDetailScreen(
                     propertyId = propertyId,
@@ -167,21 +270,29 @@ fun AshianMelkMainApp() {
 
             // 4. Property Creation Wizard Screen (5 Steps, Offline encrypted drafts)
             composable(Screen.PropertyCreate.route) {
-                val creationViewModel: PropertyCreationViewModel = viewModel {
-                    PropertyCreationViewModel(app.propertyRepository)
-                }
-                PropertyCreationWizardScreen(
-                    viewModel = creationViewModel,
-                    onBackClick = { navController.popBackStack() },
-                    onSuccessFinish = { newId ->
-                        navController.popBackStack()
-                        navController.navigate(Screen.PropertyDetail.createRoute(newId))
+                if (access.canCreateProperty) {
+                    val creationViewModel: PropertyCreationViewModel = viewModel {
+                        PropertyCreationViewModel(app.propertyRepository)
                     }
-                )
+                    PropertyCreationWizardScreen(
+                        viewModel = creationViewModel,
+                        onBackClick = { navController.popBackStack() },
+                        onSuccessFinish = { newId ->
+                            navController.popBackStack()
+                            navController.navigate(Screen.PropertyDetail.createRoute(newId))
+                        }
+                    )
+                } else {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                }
             }
 
             // 5. Demands List Screen
             composable(Screen.Demands.route) {
+                if (!access.showDemands) {
+                    LaunchedEffect(Unit) { navController.navigate(Screen.Home.route) { launchSingleTop = true } }
+                    return@composable
+                }
                 val demandsViewModel: DemandsViewModel = viewModel {
                     DemandsViewModel(app.demandRepository)
                 }
@@ -198,6 +309,10 @@ fun AshianMelkMainApp() {
                 route = Screen.DemandDetail.route,
                 arguments = listOf(navArgument("demandId") { type = NavType.LongType })
             ) { backStackEntry ->
+                if (!access.showDemands) {
+                    LaunchedEffect(Unit) { navController.navigate(Screen.Home.route) { launchSingleTop = true } }
+                    return@composable
+                }
                 val demandId = backStackEntry.arguments?.getLong("demandId") ?: 0L
                 val demandsViewModel: DemandsViewModel = viewModel {
                     DemandsViewModel(app.demandRepository)
@@ -214,6 +329,10 @@ fun AshianMelkMainApp() {
 
             // 7. Tasks Screen
             composable(Screen.Tasks.route) {
+                if (!access.showTasks) {
+                    LaunchedEffect(Unit) { navController.navigate(Screen.Home.route) { launchSingleTop = true } }
+                    return@composable
+                }
                 val tasksViewModel: TasksViewModel = viewModel {
                     TasksViewModel(app.taskRepository)
                 }
@@ -250,7 +369,8 @@ fun AshianMelkMainApp() {
                     viewModel = profileViewModel,
                     onLogoutDone = {
                         navController.navigate(Screen.Login.route) {
-                            popUpTo(0) { inclusive = true }
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                            launchSingleTop = true
                         }
                     }
                 )
@@ -264,8 +384,55 @@ fun AshianMelkMainApp() {
                 LoginScreen(
                     viewModel = loginViewModel,
                     onLoginSuccess = {
-                        navController.navigate(Screen.Home.route) {
+                        val target = if (app.biometricLockManager.requiresSetup()) {
+                            Screen.SecuritySetup.route
+                        } else {
+                            app.biometricLockManager.markUnlocked()
+                            Screen.Home.route
+                        }
+                        navController.navigate(target) {
                             popUpTo(Screen.Login.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.SecuritySetup.route) {
+                AppLockScreen(
+                    lockManager = app.biometricLockManager,
+                    setupMode = true,
+                    onUnlocked = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.SecuritySetup.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onLogout = {
+                        app.tokenStorage.clearAuth()
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.SecuritySetup.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.AppUnlock.route) {
+                AppLockScreen(
+                    lockManager = app.biometricLockManager,
+                    setupMode = false,
+                    onUnlocked = {
+                        navController.popBackStack()
+                        if (navController.currentDestination?.route == null) {
+                            navController.navigate(Screen.Home.route) { launchSingleTop = true }
+                        }
+                    },
+                    onLogout = {
+                        app.tokenStorage.clearAuth()
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0)
+                            launchSingleTop = true
                         }
                     }
                 )

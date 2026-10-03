@@ -5,8 +5,8 @@ import com.example.domain.model.*
 import kotlinx.coroutines.flow.Flow
 
 interface AuthRepository {
-    suspend fun login(username: String, password: String): NetworkResult<LoginResult>
-    suspend fun verifyMfa(mfaToken: String, code: String): NetworkResult<UserProfile>
+    suspend fun login(login: String, password: String): NetworkResult<LoginResult>
+    suspend fun verifyMfa(login: String, password: String, code: String): NetworkResult<UserProfile>
     suspend fun logoutDevice(): NetworkResult<Unit>
     suspend fun logoutAllDevices(): NetworkResult<Unit>
     suspend fun getActiveSessions(): NetworkResult<List<DeviceSession>>
@@ -16,33 +16,16 @@ interface AuthRepository {
 
 sealed class LoginResult {
     data class Success(val profile: UserProfile) : LoginResult()
-    data class MfaRequired(val mfaToken: String) : LoginResult()
+    data object MfaRequired : LoginResult()
 }
 
 interface PropertyRepository {
-    suspend fun getProperties(
-        page: Int = 1,
-        perPage: Int = 15,
-        filter: PropertyFilter? = null
-    ): NetworkResult<List<Property>>
-
+    suspend fun getProperties(page: Int = 1, perPage: Int = 15, filter: PropertyFilter? = null): NetworkResult<List<Property>>
     suspend fun getPropertyDetail(id: Long): NetworkResult<Property>
-
-    suspend fun createProperty(
-        draft: PropertyDraft,
-        onProgress: (Float) -> Unit = {}
-    ): NetworkResult<Property>
-
-    suspend fun updateProperty(
-        id: Long,
-        draft: PropertyDraft,
-        baseVersion: Int
-    ): NetworkResult<Property>
-
+    suspend fun createProperty(draft: PropertyDraft, onProgress: (Float) -> Unit = {}): NetworkResult<Property>
+    suspend fun updateProperty(id: Long, draft: PropertyDraft, baseVersion: String): NetworkResult<Property>
     fun observeCachedProperties(): Flow<List<Property>>
     fun searchCachedProperties(query: String): Flow<List<Property>>
-
-    // Offline encrypted drafts management
     suspend fun saveDraft(draft: PropertyDraft)
     suspend fun getDraft(idempotencyKey: String): PropertyDraft?
     suspend fun getLatestDraft(): PropertyDraft?

@@ -2,7 +2,9 @@ package com.example.data.repository
 
 import android.os.Build
 import com.example.core.network.NetworkResult
-import com.example.data.model.*
+import com.example.diagnostics.CrashDiagnostics
+import com.example.data.model.LoginRequest
+import com.example.data.model.UserDto
 import com.example.domain.model.DeviceSession
 import com.example.domain.model.UserProfile
 import com.example.domain.repository.AuthRepository
@@ -14,106 +16,118 @@ import kotlinx.coroutines.withContext
 
 class AuthRepositoryImpl(
     private val apiService: AshianMelkApiService,
-    private val tokenStorage: EncryptedTokenStorage
+    private val tokenStorage: EncryptedTokenStorage,
+    private val crashDiagnostics: CrashDiagnostics
 ) : AuthRepository {
 
-    override suspend fun login(username: String, password: String): NetworkResult<LoginResult> =
+    override suspend fun login(login: String, password: String): NetworkResult<LoginResult> =
+        authenticate(login, password, "")
+
+    override suspend fun verifyMfa(login: String, password: String, code: String): NetworkResult<UserProfile> {
+        return when (val result = authenticate(login, password, code)) {
+            is NetworkResult.Success -> when (val value = result.data) {
+                is LoginResult.Success -> NetworkResult.Success(value.profile)
+                LoginResult.MfaRequired -> NetworkResult.Error("کد احراز هویت دومرحله‌ای لازم است.", 401, isUnauthorized = true)
+            }
+            is NetworkResult.Error -> result
+            is NetworkResult.Loading -> NetworkResult.Loading
+        }
+    }
+
+    private suspend fun authenticate(login: String, password: String, mfaCode: String): NetworkResult<LoginResult> =
         withContext(Dispatchers.IO) {
+            crashDiagnostics.markAuthStage(if (mfaCode.isBlank()) "sending_password_login" else "sending_mfa_login")
             try {
-                val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
                 val response = apiService.login(
                     LoginRequest(
-                        username = username.trim(),
+                        login = login.trim(),
                         password = password,
+                        mfaCode = mfaCode.trim(),
                         deviceId = tokenStorage.getDeviceId(),
-                        deviceName = deviceName
+                        deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".take(120),
+                        platform = "android"
                     )
                 )
 
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
-                    val data = body.data
-                    if (data != null) {
-                        if (data.status == "mfa_required" && !data.mfaToken.isNullOrEmpty()) {
-                            return@withContext NetworkResult.Success(LoginResult.MfaRequired(data.mfaToken))
+                crashDiagnostics.markAuthStage("login_http_${response.code()}")
+                if (response.isSuccessful) {
+                    val tokens = response.body()?.data
+                        ?: return@withContext NetworkResult.Error("پاسخ ورود از سرور ناقص است.", response.code())
+                    crashDiagnostics.markAuthStage("saving_tokens")
+                    tokenStorage.saveTokens(tokens.accessToken, tokens.refreshToken)
+                    crashDiagnostics.markAuthStage("fetching_profile")
+                    when (val profile = fetchAndStoreProfile()) {
+                        is NetworkResult.Success -> {
+                            crashDiagnostics.finishAuthStage("login_success_profile_loaded")
+                            NetworkResult.Success(LoginResult.Success(profile.data))
                         }
-
-                        if (!data.accessToken.isNullOrEmpty() && !data.refreshToken.isNullOrEmpty()) {
-                            tokenStorage.saveTokens(data.accessToken, data.refreshToken)
-                            val userDto = data.user
-                            val profile = if (userDto != null) {
-                                tokenStorage.saveUserProfile(
-                                    userId = userDto.id,
-                                    fullName = userDto.fullName,
-                                    phone = userDto.phone,
-                                    branchId = userDto.branchId,
-                                    branchName = userDto.branchName,
-                                    role = userDto.role
-                                )
-                                userDto.toDomain()
-                            } else {
-                                getCurrentUser()
-                            }
-                            return@withContext NetworkResult.Success(LoginResult.Success(profile))
+                        is NetworkResult.Error -> {
+                            tokenStorage.clearAuth()
+                            profile
                         }
+                        is NetworkResult.Loading -> NetworkResult.Loading
                     }
-                    NetworkResult.Error(body.message ?: "خطا در احراز هویت", response.code())
                 } else {
-                    val errorMsg = when (response.code()) {
-                        401 -> "نام کاربری یا رمز عبور اشتباه است."
-                        403 -> "دسترسی حساب کاربری شما محدود شده است."
-                        429 -> "تعداد درخواست‌های ورود بیش از حد مجاز است. لطفاً چند دقیقه دیگر تلاش کنید."
-                        else -> "خطا در برقراری ارتباط با سرور (${response.code()})"
+                    val raw = response.errorBody()?.string().orEmpty()
+                    val mfaRequired = response.code() == 401 &&
+                        raw.contains("api_mfa_required")
+                    val mfaInvalid = response.code() == 401 &&
+                        raw.contains("api_mfa_invalid")
+
+                    if (mfaRequired) {
+                        crashDiagnostics.finishAuthStage("mfa_required_ui")
+                        NetworkResult.Success(LoginResult.MfaRequired)
+                    } else if (mfaInvalid) {
+                        crashDiagnostics.finishAuthStage("mfa_invalid")
+                        NetworkResult.Error(
+                            "کد احراز هویت دومرحله‌ای معتبر نیست.",
+                            401,
+                            isUnauthorized = false
+                        )
+                    } else {
+                        val message = when (response.code()) {
+                            400 -> "اطلاعات ورود یا شناسه دستگاه معتبر نیست."
+                            401 -> if (mfaCode.isNotBlank()) "کد احراز هویت یا اطلاعات ورود معتبر نیست." else "نام کاربری یا رمز عبور صحیح نیست."
+                            403 -> "دسترسی این حساب به سامانه داخلی فعال نیست."
+                            429 -> "تعداد تلاش‌های ورود بیش از حد مجاز است. کمی بعد دوباره تلاش کنید."
+                            else -> "ورود به سامانه انجام نشد (${response.code()})."
+                        }
+                        crashDiagnostics.finishAuthStage("login_error_${response.code()}")
+                        NetworkResult.Error(message, response.code(), isUnauthorized = response.code() == 401)
                     }
-                    NetworkResult.Error(errorMsg, response.code(), isUnauthorized = response.code() == 401)
                 }
             } catch (e: Exception) {
-                NetworkResult.Error("خطای شبکه: لطفاً اتصال اینترنت خود را بررسی کنید.", cause = e)
+                crashDiagnostics.finishAuthStage("login_exception_${e.javaClass.simpleName}")
+                NetworkResult.Error("ارتباط امن با سرور برقرار نشد.", cause = e)
             }
         }
 
-    override suspend fun verifyMfa(mfaToken: String, code: String): NetworkResult<UserProfile> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiService.verifyMfa(
-                    MfaVerifyRequest(
-                        mfaToken = mfaToken,
-                        code = code.trim(),
-                        deviceId = tokenStorage.getDeviceId()
-                    )
+    private suspend fun fetchAndStoreProfile(): NetworkResult<UserProfile> {
+        return try {
+            val response = apiService.getUserProfile()
+            val user = response.body()?.data?.user
+            if (response.isSuccessful && user != null) {
+                val profile = user.toDomain()
+                tokenStorage.saveUserProfile(
+                    userId = profile.id,
+                    fullName = profile.fullName,
+                    branchId = profile.branchId,
+                    role = profile.role,
+                    capabilities = profile.capabilities
                 )
-
-                if (response.isSuccessful && response.body()?.data != null) {
-                    val data = response.body()!!.data!!
-                    if (!data.accessToken.isNullOrEmpty() && !data.refreshToken.isNullOrEmpty()) {
-                        tokenStorage.saveTokens(data.accessToken, data.refreshToken)
-                        val userDto = data.user
-                        if (userDto != null) {
-                            tokenStorage.saveUserProfile(
-                                userId = userDto.id,
-                                fullName = userDto.fullName,
-                                phone = userDto.phone,
-                                branchId = userDto.branchId,
-                                branchName = userDto.branchName,
-                                role = userDto.role
-                            )
-                            return@withContext NetworkResult.Success(userDto.toDomain())
-                        }
-                    }
-                    NetworkResult.Success(getCurrentUser())
-                } else {
-                    NetworkResult.Error("کد تایید دو مرحله‌ای نادرست یا منقضی شده است.", response.code())
-                }
-            } catch (e: Exception) {
-                NetworkResult.Error("خطا در تایید کد دو مرحله‌ای", cause = e)
+                NetworkResult.Success(profile)
+            } else {
+                NetworkResult.Error("اطلاعات حساب کاربری از سرور دریافت نشد.", response.code())
             }
+        } catch (e: Exception) {
+            NetworkResult.Error("دریافت پروفایل کاربر انجام نشد.", cause = e)
         }
+    }
 
     override suspend fun logoutDevice(): NetworkResult<Unit> = withContext(Dispatchers.IO) {
         try {
-            apiService.logoutDevice(LogoutDeviceRequest(deviceId = tokenStorage.getDeviceId()))
+            apiService.logoutDevice()
         } catch (_: Exception) {
-            // Ignore network drop during logout
         } finally {
             tokenStorage.clearAuth()
         }
@@ -124,7 +138,6 @@ class AuthRepositoryImpl(
         try {
             apiService.logoutAllDevices()
         } catch (_: Exception) {
-            // Ignore network drop
         } finally {
             tokenStorage.clearAuth()
         }
@@ -135,72 +148,51 @@ class AuthRepositoryImpl(
         withContext(Dispatchers.IO) {
             try {
                 val response = apiService.getActiveSessions()
-                if (response.isSuccessful && response.body()?.data != null) {
-                    val sessions = response.body()!!.data!!.map {
-                        DeviceSession(
-                            sessionId = it.sessionId,
-                            deviceName = it.deviceName,
-                            lastActive = it.lastActive,
-                            ipAddress = it.ipAddress,
-                            isCurrentDevice = it.isCurrent
-                        )
-                    }
-                    NetworkResult.Success(sessions)
-                } else {
-                    // Fallback to current device
+                val sessions = response.body()?.data?.sessions
+                if (response.isSuccessful && sessions != null) {
                     NetworkResult.Success(
-                        listOf(
+                        sessions.map {
                             DeviceSession(
-                                sessionId = tokenStorage.getDeviceId(),
-                                deviceName = "${Build.MANUFACTURER} ${Build.MODEL} (این دستگاه)",
-                                lastActive = "اکنون",
-                                ipAddress = "127.0.0.1",
-                                isCurrentDevice = true
+                                sessionId = it.sessionId,
+                                deviceName = it.deviceName.ifBlank { it.platform },
+                                lastActive = it.lastUsedAt.ifBlank { it.issuedAt },
+                                ipAddress = "",
+                                isCurrentDevice = false
                             )
-                        )
+                        }
                     )
+                } else {
+                    NetworkResult.Error("نشست‌های فعال دریافت نشد.", response.code())
                 }
             } catch (e: Exception) {
-                NetworkResult.Success(
-                    listOf(
-                        DeviceSession(
-                            sessionId = tokenStorage.getDeviceId(),
-                            deviceName = "${Build.MANUFACTURER} ${Build.MODEL} (این دستگاه)",
-                            lastActive = "اکنون",
-                            ipAddress = "127.0.0.1",
-                            isCurrentDevice = true
-                        )
-                    )
-                )
+                NetworkResult.Error("ارتباط با سرور برای دریافت نشست‌ها برقرار نشد.", cause = e)
             }
         }
 
     override fun isLoggedIn(): Boolean = tokenStorage.isLoggedIn()
 
-    override fun getCurrentUser(): UserProfile {
-        return UserProfile(
-            id = tokenStorage.getUserId(),
-            username = "consultant",
-            fullName = tokenStorage.getUserName(),
-            phone = tokenStorage.getUserPhone(),
-            email = "agent@ashianmelk.ir",
-            branchId = tokenStorage.getBranchId(),
-            branchName = tokenStorage.getBranchName(),
-            role = tokenStorage.getUserRole()
-        )
-    }
+    override fun getCurrentUser(): UserProfile = UserProfile(
+        id = tokenStorage.getUserId(),
+        username = "",
+        fullName = tokenStorage.getUserName(),
+        phone = "",
+        email = "",
+        branchId = tokenStorage.getBranchId(),
+        branchName = "",
+        role = tokenStorage.getUserRole(),
+        capabilities = tokenStorage.getUserCapabilities()
+    )
 
-    private fun UserDto.toDomain(): UserProfile {
-        return UserProfile(
-            id = this.id,
-            username = this.username,
-            fullName = this.fullName,
-            phone = this.phone,
-            email = this.email ?: "",
-            branchId = this.branchId,
-            branchName = this.branchName,
-            role = this.role,
-            avatarUrl = this.avatarUrl
-        )
-    }
+    private fun UserDto.toDomain(): UserProfile = UserProfile(
+        id = id,
+        username = "",
+        fullName = displayName,
+        phone = "",
+        email = "",
+        branchId = branchId,
+        branchName = "",
+        role = staffType,
+        avatarUrl = null,
+        capabilities = capabilities
+    )
 }

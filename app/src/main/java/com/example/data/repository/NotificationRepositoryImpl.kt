@@ -22,120 +22,90 @@ class NotificationRepositoryImpl(
         withContext(Dispatchers.IO) {
             try {
                 val response = apiService.getNotifications()
-                if (response.isSuccessful && response.body()?.data != null) {
-                    val dtoList = response.body()!!.data!!
-                    val entities = dtoList.map { it.toEntity() }
+                val data = response.body()?.data
+                if (response.isSuccessful && data != null) {
+                    val items = data.items.map { it.toDomain() }
                     notificationDao.clearNotifications()
-                    notificationDao.insertNotifications(entities)
-                    NetworkResult.Success(dtoList.map { it.toDomain() })
+                    notificationDao.insertNotifications(items.map { it.toEntity() })
+                    NetworkResult.Success(items)
                 } else {
-                    fallbackToCache()
+                    fallbackToCache(response.code())
                 }
             } catch (e: Exception) {
-                fallbackToCache()
+                val cached = notificationDao.getAllNotificationsFlow().first()
+                if (cached.isNotEmpty()) NetworkResult.Success(cached.map { it.toDomain() })
+                else NetworkResult.Error("اعلان‌ها در حالت آفلاین قبلاً روی دستگاه ذخیره نشده‌اند.", cause = e)
             }
         }
 
-    private suspend fun fallbackToCache(): NetworkResult<List<AppNotification>> {
+    private suspend fun fallbackToCache(code: Int): NetworkResult<List<AppNotification>> {
         val cached = notificationDao.getAllNotificationsFlow().first()
-        return if (cached.isNotEmpty()) {
-            NetworkResult.Success(cached.map { it.toDomain() })
-        } else {
-            val initial = getAshianMelkInitialNotifications()
-            notificationDao.insertNotifications(initial)
-            NetworkResult.Success(initial.map { it.toDomain() })
-        }
+        return if (cached.isNotEmpty()) NetworkResult.Success(cached.map { it.toDomain() })
+        else NetworkResult.Error("دریافت اعلان‌ها از سرور انجام نشد.", code)
     }
 
     override suspend fun markAsRead(id: Long): NetworkResult<Unit> = withContext(Dispatchers.IO) {
-        notificationDao.markAsRead(id)
         try {
-            apiService.markNotificationAsRead(id)
-        } catch (_: Exception) {}
-        NetworkResult.Success(Unit)
+            val response = apiService.markNotificationAsRead(id)
+            if (response.isSuccessful) {
+                notificationDao.markAsRead(id)
+                NetworkResult.Success(Unit)
+            } else {
+                NetworkResult.Error("ثبت مشاهده اعلان روی سرور انجام نشد.", response.code())
+            }
+        } catch (e: Exception) {
+            NetworkResult.Error("ثبت مشاهده اعلان نیاز به اتصال آنلاین دارد.", cause = e)
+        }
     }
 
     override suspend fun markAllAsRead(): NetworkResult<Unit> = withContext(Dispatchers.IO) {
-        notificationDao.markAllAsRead()
-        try {
-            apiService.markAllNotificationsAsRead()
-        } catch (_: Exception) {}
+        val unread = notificationDao.getAllNotificationsFlow().first().filter { !it.isRead }
+        for (item in unread) {
+            try {
+                val response = apiService.markNotificationAsRead(item.id)
+                if (!response.isSuccessful) {
+                    return@withContext NetworkResult.Error("همه اعلان‌ها روی سرور خوانده نشدند.", response.code())
+                }
+                notificationDao.markAsRead(item.id)
+            } catch (e: Exception) {
+                return@withContext NetworkResult.Error("خواندن همه اعلان‌ها نیاز به اتصال آنلاین دارد.", cause = e)
+            }
+        }
         NetworkResult.Success(Unit)
     }
 
-    override fun observeCachedNotifications(): Flow<List<AppNotification>> {
-        return notificationDao.getAllNotificationsFlow().map { list -> list.map { it.toDomain() } }
-    }
+    override fun observeCachedNotifications(): Flow<List<AppNotification>> =
+        notificationDao.getAllNotificationsFlow().map { list -> list.map { it.toDomain() } }
 
-    override fun observeUnreadCount(): Flow<Int> {
-        return notificationDao.getUnreadCountFlow()
-    }
+    override fun observeUnreadCount(): Flow<Int> = notificationDao.getUnreadCountFlow()
 
-    private fun NotificationDto.toDomain(): AppNotification {
-        return AppNotification(
-            id = this.id,
-            title = this.title,
-            message = this.message,
-            type = this.type,
-            targetId = this.targetId,
-            isRead = this.isRead,
-            createdAt = this.createdAt
-        )
-    }
+    private fun NotificationDto.toDomain(): AppNotification = AppNotification(
+        id = id,
+        title = title,
+        message = body,
+        type = entityType.ifBlank { type },
+        targetId = entityId.takeIf { it > 0 },
+        isRead = read,
+        createdAt = createdAt
+    )
 
-    private fun NotificationDto.toEntity(): NotificationEntity {
-        return NotificationEntity(
-            id = this.id,
-            title = this.title,
-            message = this.message,
-            type = this.type,
-            targetId = this.targetId,
-            isRead = this.isRead,
-            createdAt = this.createdAt
-        )
-    }
+    private fun AppNotification.toEntity(): NotificationEntity = NotificationEntity(
+        id = id,
+        title = title,
+        message = message,
+        type = type,
+        targetId = targetId,
+        isRead = isRead,
+        createdAt = createdAt
+    )
 
-    private fun NotificationEntity.toDomain(): AppNotification {
-        return AppNotification(
-            id = this.id,
-            title = this.title,
-            message = this.message,
-            type = this.type,
-            targetId = this.targetId,
-            isRead = this.isRead,
-            createdAt = this.createdAt
-        )
-    }
-
-    private fun getAshianMelkInitialNotifications(): List<NotificationEntity> {
-        return listOf(
-            NotificationEntity(
-                id = 401L,
-                title = "متقاضی جدید برای منطقه زعفرانیه",
-                message = "متقاضی جدید با بودجه ۳۵ میلیارد تومان به شما اختصاص داده شد.",
-                type = "demand",
-                targetId = 201L,
-                isRead = false,
-                createdAt = "۱۰ دقیقه پیش"
-            ),
-            NotificationEntity(
-                id = 402L,
-                title = "یادآوری قرار بازدید ملک",
-                message = "قرار بازدید با دکتر فرهمند در پنت‌هاوس زعفرانیه ساعت ۱۶:۳۰ هماهنگ شده است.",
-                type = "appointment",
-                targetId = 101L,
-                isRead = false,
-                createdAt = "۴۵ دقیقه پیش"
-            ),
-            NotificationEntity(
-                id = 403L,
-                title = "تغییر قیمت ملک سعادت‌آباد",
-                message = "مالک کد AM-7319 قیمت ملک را به ۴۵ میلیارد تومان اصلاح کرد.",
-                type = "property",
-                targetId = 102L,
-                isRead = true,
-                createdAt = "دیروز"
-            )
-        )
-    }
+    private fun NotificationEntity.toDomain(): AppNotification = AppNotification(
+        id = id,
+        title = title,
+        message = message,
+        type = type,
+        targetId = targetId,
+        isRead = isRead,
+        createdAt = createdAt
+    )
 }

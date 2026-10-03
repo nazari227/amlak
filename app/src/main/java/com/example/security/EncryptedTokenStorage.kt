@@ -2,6 +2,9 @@ package com.example.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 class EncryptedTokenStorage(
@@ -14,84 +17,82 @@ class EncryptedTokenStorage(
         private const val KEY_REFRESH_TOKEN = "enc_refresh_token"
         private const val KEY_DEVICE_SESSION_ID = "device_session_id"
         private const val KEY_USER_ID = "user_id"
-        private const val KEY_USER_NAME = "user_name"
-        private const val KEY_USER_PHONE = "user_phone"
+        private const val KEY_USER_NAME = "enc_user_name"
         private const val KEY_BRANCH_ID = "branch_id"
-        private const val KEY_BRANCH_NAME = "branch_name"
-        private const val KEY_USER_ROLE = "user_role"
+        private const val KEY_USER_ROLE = "enc_user_role"
+        private const val KEY_USER_CAPABILITIES = "enc_user_capabilities"
         private const val KEY_SCREENSHOT_PROTECTED = "screenshot_protected"
     }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val _screenshotProtection = MutableStateFlow(
+        prefs.getBoolean(KEY_SCREENSHOT_PROTECTED, true)
+    )
+    val screenshotProtection: StateFlow<Boolean> = _screenshotProtection.asStateFlow()
+
     init {
-        // Ensure consistent device session ID
         if (prefs.getString(KEY_DEVICE_SESSION_ID, null) == null) {
-            val deviceId = UUID.randomUUID().toString()
-            prefs.edit().putString(KEY_DEVICE_SESSION_ID, deviceId).apply()
+            prefs.edit().putString(KEY_DEVICE_SESSION_ID, UUID.randomUUID().toString()).apply()
         }
     }
 
-    fun getDeviceId(): String {
-        return prefs.getString(KEY_DEVICE_SESSION_ID, "") ?: UUID.randomUUID().toString()
-    }
+    fun getDeviceId(): String = prefs.getString(KEY_DEVICE_SESSION_ID, null)
+        ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString(KEY_DEVICE_SESSION_ID, it).apply()
+        }
 
-    fun getAccessToken(): String? {
-        val encrypted = prefs.getString(KEY_ACCESS_TOKEN, null) ?: return null
-        val decrypted = keyStoreManager.decrypt(encrypted)
-        return decrypted.ifEmpty { null }
-    }
-
-    fun saveAccessToken(token: String) {
-        val encrypted = keyStoreManager.encrypt(token)
-        prefs.edit().putString(KEY_ACCESS_TOKEN, encrypted).apply()
-    }
-
-    fun getRefreshToken(): String? {
-        val encrypted = prefs.getString(KEY_REFRESH_TOKEN, null) ?: return null
-        val decrypted = keyStoreManager.decrypt(encrypted)
-        return decrypted.ifEmpty { null }
-    }
-
-    fun saveRefreshToken(token: String) {
-        val encrypted = keyStoreManager.encrypt(token)
-        prefs.edit().putString(KEY_REFRESH_TOKEN, encrypted).apply()
-    }
+    fun getAccessToken(): String? = getEncrypted(KEY_ACCESS_TOKEN)
+    fun getRefreshToken(): String? = getEncrypted(KEY_REFRESH_TOKEN)
 
     fun saveTokens(accessToken: String, refreshToken: String) {
-        saveAccessToken(accessToken)
-        saveRefreshToken(refreshToken)
+        prefs.edit()
+            .putString(KEY_ACCESS_TOKEN, keyStoreManager.encrypt(accessToken))
+            .putString(KEY_REFRESH_TOKEN, keyStoreManager.encrypt(refreshToken))
+            .apply()
     }
 
     fun saveUserProfile(
         userId: Long,
         fullName: String,
-        phone: String,
         branchId: Long,
-        branchName: String,
-        role: String
+        role: String,
+        capabilities: Map<String, Boolean> = emptyMap()
     ) {
         prefs.edit()
             .putLong(KEY_USER_ID, userId)
-            .putString(KEY_USER_NAME, fullName)
-            .putString(KEY_USER_PHONE, phone)
+            .putString(KEY_USER_NAME, keyStoreManager.encrypt(fullName))
             .putLong(KEY_BRANCH_ID, branchId)
-            .putString(KEY_BRANCH_NAME, branchName)
-            .putString(KEY_USER_ROLE, role)
+            .putString(KEY_USER_ROLE, keyStoreManager.encrypt(role))
+            .putString(
+                KEY_USER_CAPABILITIES,
+                keyStoreManager.encrypt(
+                    capabilities.entries
+                        .sortedBy { it.key }
+                        .joinToString(";") { "${it.key}=${if (it.value) 1 else 0}" }
+                )
+            )
             .apply()
     }
 
     fun getUserId(): Long = prefs.getLong(KEY_USER_ID, 0L)
-    fun getUserName(): String = prefs.getString(KEY_USER_NAME, "مشاور املاک") ?: "مشاور املاک"
-    fun getUserPhone(): String = prefs.getString(KEY_USER_PHONE, "") ?: ""
-    fun getBranchId(): Long = prefs.getLong(KEY_BRANCH_ID, 1L)
-    fun getBranchName(): String = prefs.getString(KEY_BRANCH_NAME, "شعبه مرکزی") ?: "شعبه مرکزی"
-    fun getUserRole(): String = prefs.getString(KEY_USER_ROLE, "consultant") ?: "consultant"
+    fun getUserName(): String = getEncrypted(KEY_USER_NAME).orEmpty()
+    fun getBranchId(): Long = prefs.getLong(KEY_BRANCH_ID, 0L)
+    fun getUserRole(): String = getEncrypted(KEY_USER_ROLE).orEmpty()
 
-    fun isLoggedIn(): Boolean {
-        return !getAccessToken().isNullOrBlank()
-    }
+    fun getUserCapabilities(): Map<String, Boolean> =
+        getEncrypted(KEY_USER_CAPABILITIES)
+            .orEmpty()
+            .split(";")
+            .mapNotNull { entry ->
+                val i = entry.indexOf('=')
+                if (i <= 0) null else entry.substring(0, i) to (entry.substring(i + 1) == "1")
+            }
+            .toMap()
+
+    fun isLoggedIn(): Boolean =
+        !getAccessToken().isNullOrBlank() && !getRefreshToken().isNullOrBlank()
 
     fun clearAuth() {
         prefs.edit()
@@ -99,15 +100,21 @@ class EncryptedTokenStorage(
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_USER_ID)
             .remove(KEY_USER_NAME)
-            .remove(KEY_USER_PHONE)
+            .remove(KEY_BRANCH_ID)
+            .remove(KEY_USER_ROLE)
+            .remove(KEY_USER_CAPABILITIES)
             .apply()
     }
 
-    fun isScreenshotProtectionEnabled(): Boolean {
-        return prefs.getBoolean(KEY_SCREENSHOT_PROTECTED, false)
-    }
+    fun isScreenshotProtectionEnabled(): Boolean = _screenshotProtection.value
 
     fun setScreenshotProtection(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SCREENSHOT_PROTECTED, enabled).apply()
+        _screenshotProtection.value = enabled
+    }
+
+    private fun getEncrypted(key: String): String? {
+        val encrypted = prefs.getString(key, null) ?: return null
+        return keyStoreManager.decrypt(encrypted).ifBlank { null }
     }
 }

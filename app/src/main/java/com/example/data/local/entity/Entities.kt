@@ -24,7 +24,7 @@ data class PropertyEntity(
     val city: String,
     val neighborhood: String,
     val thumbnail: String?,
-    val baseVersion: Int,
+    val baseVersion: String,
     val cachedAt: Long = System.currentTimeMillis()
 )
 

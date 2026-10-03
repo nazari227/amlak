@@ -24,6 +24,7 @@ import com.example.core.util.PersianUtils
 import com.example.domain.model.DeviceSession
 import com.example.presentation.components.AshianMelkTopBar
 import com.example.security.SecurityUtils
+import com.example.security.AppAccessPolicy
 import com.example.ui.theme.*
 
 @Composable
@@ -34,6 +35,9 @@ fun ProfileScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutAllDialog by remember { mutableStateOf(false) }
+    val access = remember(state.userProfile) {
+        state.userProfile?.let { AppAccessPolicy.forUser(it) }
+    }
 
     LaunchedEffect(state.isLoggedOut) {
         if (state.isLoggedOut) {
@@ -51,7 +55,7 @@ fun ProfileScreen(
         topBar = {
             AshianMelkTopBar(
                 title = "پروفایل و تنظیمات امنیتی",
-                subtitle = state.userProfile?.branchName ?: "شعبه مرکزی"
+                subtitle = state.userProfile?.branchName.orEmpty().ifBlank { access?.roleLabel ?: "حساب سازمانی" }
             )
         }
     ) { paddingValues ->
@@ -101,9 +105,12 @@ fun ProfileScreen(
                         )
 
                         Text(
-                            text = "${state.userProfile?.branchName} • مشاور رسمی",
+                            text = listOfNotNull(
+                                state.userProfile?.branchName?.takeIf { it.isNotBlank() },
+                                access?.roleLabel
+                            ).joinToString(" • ").ifBlank { "همکار داخلی" },
                             style = MaterialTheme.typography.bodySmall,
-                            color = NeutralMedium
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         if (!state.userProfile?.phone.isNullOrBlank()) {
@@ -111,7 +118,7 @@ fun ProfileScreen(
                             Text(
                                 text = state.userProfile!!.phone,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = RealEstateBlue
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -146,7 +153,7 @@ fun ProfileScreen(
                                 Text(
                                     text = "جلوگیری از ضبط صفحه و تصویربرداری از اطلاعات محرمانه مشتریان (FLAG_SECURE)",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = NeutralMedium
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Switch(
@@ -157,7 +164,7 @@ fun ProfileScreen(
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = NeutralBorder)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -166,7 +173,7 @@ fun ProfileScreen(
                             Text(
                                 text = "رمزنگاری محلی سخت‌افزاری Android Keystore فعال است.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = NeutralMedium
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -271,7 +278,7 @@ fun DeviceSessionCard(session: DeviceSession) {
         ) {
             Surface(
                 shape = CircleShape,
-                color = if (session.isCurrentDevice) Color(0xFFDCFCE7) else Color(0xFFF1F5F9),
+                color = if (session.isCurrentDevice) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -304,7 +311,7 @@ fun DeviceSessionCard(session: DeviceSession) {
                         ) {
                             Text(
                                 text = "این دستگاه",
-                                color = Color(0xFF166534),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
@@ -315,7 +322,7 @@ fun DeviceSessionCard(session: DeviceSession) {
                 Text(
                     text = "آخرین فعالیت: ${session.lastActive} • شناسه: ${session.sessionId.take(8)}...",
                     style = MaterialTheme.typography.labelSmall,
-                    color = NeutralMedium
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
